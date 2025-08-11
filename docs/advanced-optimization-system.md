@@ -1,8 +1,8 @@
-# Advanced Optimization System
+# Evolve - Advanced Optimization System
 
 ## Overview
 
-The Advanced Optimization System implements a sophisticated, iterative optimization approach for improving AI model configurations. It features flow-based orchestration, multi-agent collaboration, research-driven optimization, and a pluggable evaluation architecture.
+**Evolve** implements a sophisticated, iterative optimization approach that enables AI agents to continuously improve through every interaction. The system features flow-based orchestration, multi-agent collaboration, research-driven optimization, and a pluggable evaluation architecture designed to work with any TypeScript agent framework.
 
 ## Architecture
 
@@ -349,10 +349,60 @@ await service.runIterativeOptimization({
 - Adjust `minImprovement` threshold
 - Limit `maxIterations` for faster results
 
+## Framework Independence
+
+### Current State
+Evolve currently uses Mastra for agent implementation, but the architecture is designed for framework independence through:
+
+- **Abstract interfaces** for agent operations
+- **Pluggable adapters** for different frameworks
+- **Common evaluation layer** that works across frameworks
+- **Unified state management** independent of agent implementation
+
+### Planned Framework Support
+
+```typescript
+// Mastra (Current)
+import { MastraAdapter } from '@evolve/mastra';
+const evolve = new Evolve({ adapter: new MastraAdapter(agent) });
+
+// LangChain (Coming Soon)
+import { LangChainAdapter } from '@evolve/langchain';
+const evolve = new Evolve({ adapter: new LangChainAdapter(chain) });
+
+// Vercel AI SDK (Planned)
+import { VercelAdapter } from '@evolve/vercel';
+const evolve = new Evolve({ adapter: new VercelAdapter(aiAgent) });
+
+// Custom Framework
+import { CustomAdapter } from './my-adapter';
+const evolve = new Evolve({ adapter: new CustomAdapter(myAgent) });
+```
+
 ## Future Enhancements
 
-- Distributed agent execution
-- Real-time optimization during production
-- Transfer learning across similar tasks
-- Human-in-the-loop validation
-- Advanced visualization dashboard
+### Near Term (Q2 2024)
+- **Framework Adapters**: LangChain, Vercel AI SDK integration
+- **Cloud Deployment**: Serverless evolution functions
+- **Real-time Monitoring**: Production performance tracking
+- **Community Patterns**: Shared optimization strategies
+
+### Long Term (Q3-Q4 2024)
+- **Distributed Evolution**: Multi-node optimization
+- **AutoML Integration**: Automatic architecture search
+- **Cross-Agent Learning**: Transfer learning between agents
+- **Enterprise Features**: SSO, audit logs, compliance
+- **Visual Evolution Studio**: GUI for monitoring evolution
+
+## Why Evolve?
+
+Traditional AI agents are static - they perform the same way today as they did yesterday. **Evolve** changes this by making your agents:
+
+- **Self-Improving**: Learn from every interaction
+- **Adaptive**: Adjust to changing requirements
+- **Intelligent**: Use research and patterns for optimization
+- **Framework-Agnostic**: Work with your existing tech stack
+
+---
+
+**Evolve** - Transform your static AI agents into continuously learning systems.

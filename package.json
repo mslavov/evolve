@@ -1,5 +1,5 @@
 {
-  "name": "self-improving-scorer",
+  "name": "evolve",
   "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
@@ -9,7 +9,12 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "score": "tsx src/cli/index.ts score",
+    "assess": "tsx src/cli/index.ts assess",
+    "improve": "tsx src/cli/index.ts improve",
+    "config": "tsx src/cli/index.ts config",
+    "dataset": "tsx src/cli/index.ts dataset"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "latest",
@@ -33,11 +38,16 @@
   },
   "keywords": [
     "ai",
-    "scoring",
-    "evaluation",
-    "self-improving"
+    "agents",
+    "self-improving",
+    "evolution",
+    "optimization",
+    "mastra",
+    "langchain",
+    "framework-agnostic",
+    "typescript"
   ],
   "author": "",
   "license": "MIT",
-  "description": "Self-improving content usefulness scorer using Mastra"
+  "description": "Evolve - Self-improving AI agents that evolve with every interaction. Framework-agnostic optimization for Mastra, LangChain, and any TypeScript agent system."
 }

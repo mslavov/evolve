@@ -1,11 +1,14 @@
-# Documentation Index
+# Evolve Documentation
 
-Welcome to the Self-Improving Content Usefulness Scorer documentation. This index provides navigation to all documentation resources.
+Welcome to **Evolve** - the framework for building self-improving AI agents that evolve with every interaction. This documentation covers the complete system architecture, APIs, and integration guides.
 
 ## 📚 Core Documentation
 
 ### [System Overview](./system-overview.md)
-Complete architectural overview of the scoring system, including technology stack, components, data flow, and configuration.
+Complete architectural overview of the Evolve framework, including multi-agent orchestration, evolution strategies, and data flow.
+
+### [Advanced Optimization System](./advanced-optimization-system.md)
+Deep dive into the iterative optimization engine, pluggable evaluation strategies, and multi-agent collaboration.
 
 ## 🛠 Technical Documentation
 
@@ -102,6 +105,30 @@ DEFAULT_MAX_TOKENS=500
 - **Correlation** - Target > 0.85
 - **Consistency** - Target > 0.9
 - **Bias detection**
+
+## 🧬 Evolution Framework
+
+### What Makes Evolve Different
+
+Evolve transforms static AI agents into continuously learning systems that:
+
+- **Learn** - Analyze performance patterns and identify improvement opportunities
+- **Adapt** - Automatically implement optimizations based on research
+- **Evolve** - Iterate through refinement cycles until optimal performance
+- **Integrate** - Work with any TypeScript agent framework (Mastra, LangChain, custom)
+
+### Framework-Agnostic Design
+
+While currently implemented with Mastra, Evolve's architecture supports any TypeScript-based agent framework through adapters:
+
+```typescript
+// Future adapter pattern
+const evolve = new Evolve({
+  adapter: new YourFrameworkAdapter(agent),
+  evaluationStrategy: 'hybrid',
+  targetPerformance: 0.9
+});
+```
 
 ## 🏗 Development Workflow
 

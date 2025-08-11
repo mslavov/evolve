@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "bunx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@latest"
+      ]
+    },
+    "mastra-docs": {
+      "command": "bunx",
+      "args": [
+        "-y",
+        "@mastra/mcp-docs-server"
+      ]
+    }
+  }
+}

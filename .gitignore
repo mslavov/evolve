@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+*.db
+*.log
+.DS_Store
+scoring-data/
+tmp/

@@ -14,40 +14,57 @@ export function createScoreCommand() {
     .option('--collect', 'Collect this run for assessment', false)
     .option('--verbose', 'Show detailed output', false)
     .action(async (content: string, options) => {
-      const spinner = ora('Initializing scorer...').start();
+      const spinner = ora('Initializing agent...').start();
       
       try {
         const db = getDatabase();
         const agentService = new AgentService(db);
         await agentService.initialize();
         
-        spinner.text = 'Scoring content...';
+        spinner.text = 'Processing content...';
         
-        const result = await agentService.scoreContent(content, {
+        const result = await agentService.run(content, {
           configKey: options.config,
-          collectRun: options.collect,
-          includeTelemetry: options.verbose,
         });
         
-        spinner.succeed('Content scored successfully!');
+        spinner.succeed('Content processed successfully!');
         
-        // Display results
-        console.log('\n📊 Scoring Results:');
-        console.log(chalk.cyan('Score:'), chalk.yellow(result.score.toFixed(2)));
-        console.log(chalk.cyan('Reasoning:'), result.reasoning);
+        // Display results - interpret the output based on its structure
+        console.log('\n📊 Results:');
         
-        if (result.dimensions && options.verbose) {
-          console.log('\n📐 Dimensions:');
-          for (const [key, value] of Object.entries(result.dimensions)) {
-            if (value !== undefined) {
-              console.log(`  ${chalk.gray(key)}:`, value.toFixed(2));
+        // Check if output has scoring structure
+        if (typeof result.output === 'object' && 'score' in result.output) {
+          console.log(chalk.cyan('Score:'), chalk.yellow(result.output.score.toFixed(2)));
+          if (result.output.reasoning) {
+            console.log(chalk.cyan('Reasoning:'), result.output.reasoning);
+          }
+          
+          if (result.output.dimensions && options.verbose) {
+            console.log('\n📐 Dimensions:');
+            for (const [key, value] of Object.entries(result.output.dimensions)) {
+              if (value !== undefined && typeof value === 'number') {
+                console.log(`  ${chalk.gray(key)}:`, value.toFixed(2));
+              }
             }
+          }
+        } else {
+          // Generic output display
+          console.log(chalk.cyan('Output:'), 
+            typeof result.output === 'string' 
+              ? result.output 
+              : JSON.stringify(result.output, null, 2)
+          );
+        }
+        
+        if (options.verbose && result.metadata) {
+          console.log('\n📝 Metadata:');
+          for (const [key, value] of Object.entries(result.metadata)) {
+            console.log(`  ${chalk.gray(key)}:`, value);
           }
         }
         
         if (result.runId) {
           console.log('\n' + chalk.gray(`Run ID: ${result.runId}`));
-          console.log(chalk.gray('This run has been collected for assessment'));
         }
       } catch (error) {
         spinner.fail('Failed to score content');

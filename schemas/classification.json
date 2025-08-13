@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "properties": {
+    "category": {
+      "type": "string",
+      "description": "Primary category for the content"
+    },
+    "subcategories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of relevant subcategories",
+      "optional": true
+    },
+    "confidence": {
+      "type": "number",
+      "min": 0,
+      "max": 1,
+      "description": "Confidence score for the classification"
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "Explanation for the classification decision"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Relevant tags for the content",
+      "optional": true
+    }
+  }
+}

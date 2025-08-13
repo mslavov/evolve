@@ -299,7 +299,7 @@ export class ImprovementService {
     
     // Filter for runs with the current prompt
     const versionRuns = currentRuns.filter(
-      r => r.configPromptId === prompt.id
+      r => r.configPromptVersion === params.currentVersion
     );
     
     // Get ground truth data from eval datasets
@@ -463,27 +463,46 @@ export class ImprovementService {
     let totalSquaredError = 0;
     let count = 0;
     
-    // Create temporary config
-    const tempKey = `temp_${Date.now()}`;
-    const tempConfig = await this.agentService.saveConfig(tempKey, config);
+    // Check if this is an existing config or a new one
+    const isExistingConfig = 'id' in config && 'key' in config;
+    let configKey: string;
+    let shouldCleanup = false;
+    
+    if (isExistingConfig) {
+      // Use existing config directly
+      configKey = (config as Config).key;
+    } else {
+      // Create temporary config for new configuration
+      const tempKey = `temp_${Date.now()}`;
+      await this.agentService.saveConfig(tempKey, config as Omit<NewConfig, 'key'>);
+      configKey = tempKey;
+      shouldCleanup = true;
+    }
     
     try {
       for (const data of testData) {
-        const result = await this.agentService.scoreContent(
+        const result = await this.agentService.run(
           data.inputContent,
-          { configKey: tempKey }
+          { configKey }
         );
         
-        const error = result.score - data.groundTruthScore;
+        // Extract score from output
+        const score = typeof result.output === 'object' && result.output.score !== undefined 
+          ? result.output.score 
+          : 0;
         
-        totalScore += result.score;
+        const error = score - data.groundTruthScore;
+        
+        totalScore += score;
         totalError += error;
         totalSquaredError += error * error;
         count++;
       }
     } finally {
-      // Clean up temporary config
-      await this.configRepo.deleteByKey(tempKey);
+      // Clean up temporary config if we created one
+      if (shouldCleanup) {
+        await this.configRepo.deleteByKey(configKey);
+      }
     }
     
     if (count === 0) return { score: 0, error: 0, rmse: 0 };
@@ -509,12 +528,16 @@ export class ImprovementService {
     const errorsByType: Record<string, number[]> = {};
     
     for (const data of testData) {
-      const result = await this.agentService.scoreContent(
+      const result = await this.agentService.run(
         data.inputContent,
         { configKey: config.key }
       );
       
-      const error = Math.abs(result.score - data.groundTruthScore);
+      // Extract score from output
+      const score = typeof result.output === 'object' && result.output.score !== undefined 
+        ? result.output.score 
+        : 0;
+      const error = Math.abs(score - data.groundTruthScore);
       const type = data.inputType || 'general';
       
       if (!errorsByType[type]) errorsByType[type] = [];

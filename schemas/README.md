@@ -1,0 +1,97 @@
+# Output Schema Templates
+
+This directory contains predefined JSON schema templates that can be used to configure the output structure of the AI agent.
+
+## Available Schemas
+
+### classification.json
+Used for categorizing content into predefined or dynamic categories.
+- `category`: Primary classification
+- `subcategories`: Additional classifications
+- `confidence`: Classification confidence score
+- `reasoning`: Explanation for the classification
+- `tags`: Relevant tags
+
+### extraction.json
+Used for extracting structured information from unstructured text.
+- `entities`: Named entities (people, places, organizations, etc.)
+- `keyPoints`: Important facts or statements
+- `relationships`: Connections between entities
+- `metadata`: Additional extracted information
+
+### sentiment.json
+Used for analyzing emotional tone and sentiment.
+- `sentiment`: Overall sentiment (positive/negative/neutral/mixed)
+- `score`: Numerical sentiment score
+- `emotions`: Detected emotions and intensities
+- `aspects`: Aspect-based sentiment analysis
+- `reasoning`: Explanation for the analysis
+
+### qa.json
+Used for question-answering tasks.
+- `answer`: The main answer
+- `confidence`: Answer confidence
+- `sources`: Supporting evidence
+- `alternativeAnswers`: Other possible answers
+- `answerType`: Type of answer (factual/opinion/etc.)
+- `followUpQuestions`: Suggested related questions
+
+## Usage
+
+### Using a predefined schema
+
+```bash
+# Use a predefined schema
+pnpm cli config set myconfig --model gpt-4o --schema classification
+
+# Clone and modify
+pnpm cli config clone default myconfig --schema sentiment
+```
+
+### Using a custom schema file
+
+```bash
+# Use a custom schema from file
+pnpm cli config set myconfig --model gpt-4o --schema-file ./schemas/classification.json
+
+# Create your own schema
+cp schemas/extraction.json my-custom-schema.json
+# Edit my-custom-schema.json
+pnpm cli config set myconfig --schema-file ./my-custom-schema.json
+```
+
+## Schema Format
+
+Schemas are defined in a simplified JSON format that gets converted to Zod schemas:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "fieldName": {
+      "type": "string|number|boolean|array|object|record",
+      "description": "Field description",
+      "optional": true,
+      "min": 0,
+      "max": 100,
+      "enum": ["option1", "option2"]
+    }
+  }
+}
+```
+
+### Supported Types
+- `string`: Text values
+- `number`: Numeric values (supports min/max)
+- `boolean`: True/false values
+- `array`: Lists (requires `items` definition)
+- `object`: Nested objects (requires `properties`)
+- `record`: Key-value pairs
+- `any`: Any type
+
+### Field Options
+- `description`: Describes the field's purpose
+- `optional`: Makes the field optional
+- `min`/`max`: For numbers and string lengths
+- `enum`: For predefined options
+- `items`: For array element types

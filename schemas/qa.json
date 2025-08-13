@@ -1,0 +1,63 @@
+{
+  "type": "object",
+  "properties": {
+    "answer": {
+      "type": "string",
+      "description": "The answer to the question"
+    },
+    "confidence": {
+      "type": "number",
+      "min": 0,
+      "max": 1,
+      "description": "Confidence in the answer"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Relevant text from source"
+          },
+          "location": {
+            "type": "string",
+            "description": "Location in the source document",
+            "optional": true
+          },
+          "relevance": {
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "description": "Relevance to the question",
+            "optional": true
+          }
+        }
+      },
+      "description": "Source passages supporting the answer",
+      "optional": true
+    },
+    "alternativeAnswers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Alternative possible answers",
+      "optional": true
+    },
+    "answerType": {
+      "type": "string",
+      "enum": ["factual", "opinion", "analysis", "speculation", "unknown"],
+      "description": "Type of answer provided",
+      "optional": true
+    },
+    "followUpQuestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Suggested follow-up questions",
+      "optional": true
+    }
+  }
+}

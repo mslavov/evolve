@@ -131,7 +131,7 @@ export class ConfigRepository extends BaseRepository {
   /**
    * Clear the default flag from all configs
    */
-  private async clearDefault(): Promise<void> {
+  async clearDefault(): Promise<void> {
     await this.db
       .update(configs)
       .set({ 
@@ -148,6 +148,34 @@ export class ConfigRepository extends BaseRepository {
     await this.db
       .delete(configs)
       .where(eq(configs.key, key));
+  }
+  
+  /**
+   * Update a configuration by ID
+   */
+  async update(id: string, data: Partial<NewConfig>): Promise<Config> {
+    // Ensure only one default config
+    if (data.isDefault) {
+      await this.clearDefault();
+    }
+    
+    const [updated] = await this.db
+      .update(configs)
+      .set({
+        ...data,
+        updatedAt: new Date(),
+      })
+      .where(eq(configs.id, id))
+      .returning();
+    
+    return updated;
+  }
+  
+  /**
+   * Get all configurations
+   */
+  async findAll(): Promise<Config[]> {
+    return await this.findMany();
   }
   
   /**
@@ -174,5 +202,80 @@ export class ConfigRepository extends BaseRepository {
         updatedAt: new Date(),
       })
       .where(eq(configs.key, key));
+  }
+  
+  /**
+   * Update output schema for a configuration
+   */
+  async updateOutputSchema(
+    key: string,
+    outputSchema: Record<string, any>,
+    schemaVersion?: string
+  ): Promise<Config | null> {
+    const [updated] = await this.db
+      .update(configs)
+      .set({
+        outputSchema,
+        schemaVersion,
+        updatedAt: new Date(),
+      })
+      .where(eq(configs.key, key))
+      .returning();
+    
+    return updated || null;
+  }
+  
+  /**
+   * Update output type for a configuration
+   */
+  async updateOutputType(
+    key: string,
+    outputType: 'structured' | 'text'
+  ): Promise<Config | null> {
+    const [updated] = await this.db
+      .update(configs)
+      .set({
+        outputType,
+        updatedAt: new Date(),
+      })
+      .where(eq(configs.key, key))
+      .returning();
+    
+    return updated || null;
+  }
+  
+  /**
+   * Find configurations by schema version
+   */
+  async findBySchemaVersion(schemaVersion: string): Promise<Config[]> {
+    return await this.db
+      .select()
+      .from(configs)
+      .where(eq(configs.schemaVersion, schemaVersion))
+      .orderBy(desc(configs.createdAt));
+  }
+  
+  /**
+   * Clone a configuration with a new key
+   */
+  async clone(sourceKey: string, targetKey: string, overrides?: Partial<NewConfig>): Promise<Config> {
+    const source = await this.findByKey(sourceKey);
+    if (!source) {
+      throw new Error(`Source configuration ${sourceKey} not found`);
+    }
+    
+    const { id, key, createdAt, updatedAt, ...configData } = source;
+    
+    const [cloned] = await this.db
+      .insert(configs)
+      .values({
+        ...configData,
+        ...overrides,
+        key: targetKey,
+        isDefault: false, // Never clone as default
+      })
+      .returning();
+    
+    return cloned;
   }
 }

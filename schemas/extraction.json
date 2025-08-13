@@ -1,0 +1,66 @@
+{
+  "type": "object",
+  "properties": {
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Entity type (person, organization, location, date, etc.)"
+          },
+          "value": {
+            "type": "string",
+            "description": "The extracted entity value"
+          },
+          "context": {
+            "type": "string",
+            "description": "Surrounding context where entity was found",
+            "optional": true
+          },
+          "confidence": {
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "description": "Confidence in the extraction",
+            "optional": true
+          }
+        }
+      },
+      "description": "List of extracted entities"
+    },
+    "keyPoints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Key points or facts extracted from the content",
+      "optional": true
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "predicate": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Relationships between entities",
+      "optional": true
+    },
+    "metadata": {
+      "type": "record",
+      "description": "Additional extracted metadata",
+      "optional": true
+    }
+  }
+}

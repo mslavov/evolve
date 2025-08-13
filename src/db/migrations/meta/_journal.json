@@ -5,15 +5,29 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1754802960194,
+      "when": 1755068164990,
       "tag": "0000_striped_wallow",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "6",
-      "when": 1754803921001,
+      "when": 1755068164991,
       "tag": "0001_happy_shard",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1755068164992,
+      "tag": "0002_add_prompts_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1755068164993,
+      "tag": "0003_add_output_config_to_configs",
       "breakpoints": true
     }
   ]

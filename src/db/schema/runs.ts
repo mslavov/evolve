@@ -11,21 +11,15 @@ export const runs = sqliteTable('runs', {
   inputType: text('input_type'),
   inputMetadata: text('input_metadata', { mode: 'json' }).$type<Record<string, any>>(),
   
-  // Output fields
-  outputScore: real('output_score').notNull(),
-  outputReasoning: text('output_reasoning').notNull(),
-  outputDimensions: text('output_dimensions', { mode: 'json' }).$type<{
-    clarity?: number;
-    relevance?: number;
-    completeness?: number;
-    actionability?: number;
-    accuracy?: number;
-  }>(),
+  // Output fields - kept same names for backward compatibility but now more generic
+  outputScore: real('output_score').notNull(), // Can represent any numeric output value
+  outputReasoning: text('output_reasoning').notNull(), // Can represent any text output or JSON stringified object
+  outputDimensions: text('output_dimensions', { mode: 'json' }).$type<Record<string, any>>(), // Generic metadata/dimensions
   
   // Config fields
   configModel: text('config_model').notNull(),
   configTemperature: real('config_temperature').notNull(),
-  configPromptId: text('config_prompt_id').notNull(),
+  configPromptVersion: text('config_prompt_version').notNull(),
   configMaxTokens: integer('config_max_tokens'),
   
   // Telemetry fields

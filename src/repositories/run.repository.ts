@@ -122,6 +122,13 @@ export class RunRepository extends BaseRepository {
   }
   
   /**
+   * Find pending runs (alias for findPendingAssessment)
+   */
+  async findPending(limit?: number): Promise<Run[]> {
+    return this.findPendingAssessment(limit);
+  }
+  
+  /**
    * Get statistics about runs
    */
   async getStats(): Promise<RunStats> {

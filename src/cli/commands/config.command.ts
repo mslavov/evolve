@@ -12,7 +12,9 @@ export function createConfigCommand() {
     .addCommand(createListCommand())
     .addCommand(createSetCommand())
     .addCommand(createGetCommand())
-    .addCommand(createDefaultCommand());
+    .addCommand(createDefaultCommand())
+    .addCommand(createSchemasCommand())
+    .addCommand(createCloneCommand());
   
   return command;
 }
@@ -74,6 +76,9 @@ function createSetCommand() {
     .option('-t, --temperature <temp>', 'Temperature setting', parseFloat)
     .option('-p, --prompt <version>', 'Prompt version')
     .option('--max-tokens <n>', 'Maximum tokens', parseInt)
+    .option('--output-type <type>', 'Output type: structured or text', 'structured')
+    .option('--schema <name>', 'Predefined schema name (scoring, classification, extraction, summarization, translation)')
+    .option('--schema-file <path>', 'Path to JSON file containing custom schema definition')
     .option('--default', 'Set as default configuration', false)
     .action(async (key, options) => {
       const spinner = ora('Saving configuration...').start();
@@ -83,11 +88,28 @@ function createSetCommand() {
         const agentService = new AgentService(db);
         await agentService.initialize();
         
+        // Handle schema configuration
+        let outputSchema = undefined;
+        let schemaVersion = undefined;
+        
+        if (options.schemaFile) {
+          // Load custom schema from file
+          const fs = await import('fs/promises');
+          const schemaContent = await fs.readFile(options.schemaFile, 'utf-8');
+          outputSchema = JSON.parse(schemaContent);
+        } else if (options.schema) {
+          // Use predefined schema
+          schemaVersion = options.schema;
+        }
+        
         const config = await agentService.saveConfig(key, {
           model: options.model,
           temperature: options.temperature,
           promptId: options.prompt,
           maxTokens: options.maxTokens,
+          outputType: options.outputType,
+          outputSchema,
+          schemaVersion,
         });
         
         if (options.default) {
@@ -162,6 +184,79 @@ function createDefaultCommand() {
         spinner.succeed(`Configuration "${key}" set as default`);
       } catch (error) {
         spinner.fail('Failed to set default configuration');
+        console.error(chalk.red('Error:'), error);
+        process.exit(1);
+      }
+    });
+}
+
+function createSchemasCommand() {
+  return new Command('schemas')
+    .description('List available output schemas')
+    .action(async () => {
+      const spinner = ora('Loading schemas...').start();
+      
+      try {
+        const db = getDatabase();
+        const agentService = new AgentService(db);
+        await agentService.initialize();
+        
+        const schemas = agentService.listSchemas();
+        
+        spinner.stop();
+        
+        console.log(chalk.cyan('\n📋 Available Schemas:\n'));
+        
+        for (const schema of schemas) {
+          console.log(chalk.bold(schema.name) + chalk.gray(` v${schema.version}`));
+          if (schema.description) {
+            console.log(`  ${schema.description}`);
+          }
+          console.log();
+        }
+        
+        console.log(chalk.gray('\nUse these with: pnpm cli config set <key> --schema <name>'));
+        console.log(chalk.gray('Or provide custom schema: pnpm cli config set <key> --schema-file <path>'));
+      } catch (error) {
+        spinner.fail('Failed to load schemas');
+        console.error(chalk.red('Error:'), error);
+        process.exit(1);
+      }
+    });
+}
+
+function createCloneCommand() {
+  return new Command('clone')
+    .description('Clone an existing configuration')
+    .argument('<source>', 'Source configuration key')
+    .argument('<target>', 'Target configuration key')
+    .option('--schema <name>', 'Override with predefined schema')
+    .option('--output-type <type>', 'Override output type (structured or text)')
+    .action(async (source, target, options) => {
+      const spinner = ora('Cloning configuration...').start();
+      
+      try {
+        const db = getDatabase();
+        const { ConfigRepository } = await import('../../repositories/config.repository.js');
+        const configRepo = new ConfigRepository(db);
+        
+        const overrides: any = {};
+        if (options.schema) {
+          overrides.schemaVersion = options.schema;
+        }
+        if (options.outputType) {
+          overrides.outputType = options.outputType;
+        }
+        
+        const cloned = await configRepo.clone(source, target, overrides);
+        
+        spinner.succeed(`Configuration cloned from "${source}" to "${target}"`);
+        console.log(chalk.gray(`Model: ${cloned.model}, Temperature: ${cloned.temperature}`));
+        if (cloned.schemaVersion) {
+          console.log(chalk.gray(`Schema: ${cloned.schemaVersion}`));
+        }
+      } catch (error) {
+        spinner.fail('Failed to clone configuration');
         console.error(chalk.red('Error:'), error);
         process.exit(1);
       }

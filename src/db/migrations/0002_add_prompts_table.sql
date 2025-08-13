@@ -24,12 +24,12 @@ CREATE TABLE `prompts` (
 	`tested_at` integer
 );
 
--- Create indexes for prompts
+-- Create indexes
+CREATE UNIQUE INDEX `prompts_version_unique` ON `prompts` (`version`);
 CREATE UNIQUE INDEX `prompt_version_idx` ON `prompts` (`version`);
 CREATE INDEX `prompt_active_idx` ON `prompts` (`is_active`);
 CREATE INDEX `prompt_production_idx` ON `prompts` (`is_production`);
 CREATE INDEX `prompt_parent_idx` ON `prompts` (`parent_version`);
 
--- Rename columns in configs and runs tables
+-- Update configs table to use prompt_id instead of prompt_version
 ALTER TABLE `configs` RENAME COLUMN `prompt_version` TO `prompt_id`;
-ALTER TABLE `runs` RENAME COLUMN `config_prompt_version` TO `config_prompt_id`;

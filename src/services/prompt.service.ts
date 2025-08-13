@@ -46,9 +46,9 @@ export class PromptService {
   }
   
   /**
-   * Format a prompt template with content
+   * Format a prompt template with input
    */
-  formatPrompt(template: string, content: string, variables?: Record<string, any>): string {
+  formatPrompt(template: string, input: string, variables?: Record<string, any>): string {
     let formatted = template;
     
     // Replace any variables in the template
@@ -58,8 +58,8 @@ export class PromptService {
       }
     }
     
-    // Add the content to evaluate
-    formatted += `\n\nContent to evaluate:\n${content}`;
+    // Add the input to process
+    formatted += `\n\nInput:\n${input}`;
     
     return formatted;
   }
@@ -93,7 +93,7 @@ export class PromptService {
       version: newVersion,
       name: `${basePrompt.name} - ${strategy.type} variation`,
       description: `AI-generated variation using ${strategy.type} strategy`,
-      template: response.template,
+      template: response,
       generationStrategy: strategy.type,
       metadata: {
         strategy: strategy,
@@ -135,17 +135,20 @@ export class PromptService {
     let actuals: number[] = [];
     
     for (const data of testData) {
-      // Create a temporary config with this prompt
-      const result = await agentService.scoreContentWithPrompt(
-        data.inputContent,
-        prompt.template
-      );
+      // Use the agent's run method
+      const formattedPrompt = this.formatPrompt(prompt.template, data.inputContent);
+      const result = await agentService.run(formattedPrompt);
       
-      const error = Math.abs(result.score - data.groundTruthScore);
+      // Extract score from output
+      const score = typeof result.output === 'object' && result.output.score !== undefined 
+        ? result.output.score 
+        : 0;
+      
+      const error = Math.abs(score - data.groundTruthScore);
       totalError += error;
       totalSquaredError += error * error;
       
-      predictions.push(result.score);
+      predictions.push(score);
       actuals.push(data.groundTruthScore);
     }
     

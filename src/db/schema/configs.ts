@@ -11,6 +11,11 @@ export const configs = sqliteTable('configs', {
   maxTokens: integer('max_tokens'),
   promptId: text('prompt_id').notNull(),
   
+  // Output configuration
+  outputType: text('output_type', { enum: ['structured', 'text'] }).notNull().default('structured'),
+  outputSchema: text('output_schema', { mode: 'json' }).$type<Record<string, any>>(),
+  schemaVersion: text('schema_version'),
+  
   // Performance metrics
   averageScore: real('average_score'),
   evaluationCount: integer('evaluation_count').default(0),

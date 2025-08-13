@@ -1,0 +1,92 @@
+{
+  "type": "object",
+  "properties": {
+    "sentiment": {
+      "type": "string",
+      "enum": ["positive", "negative", "neutral", "mixed"],
+      "description": "Overall sentiment of the content"
+    },
+    "score": {
+      "type": "number",
+      "min": -1,
+      "max": 1,
+      "description": "Sentiment score (-1 most negative, 1 most positive)"
+    },
+    "confidence": {
+      "type": "number",
+      "min": 0,
+      "max": 1,
+      "description": "Confidence in the sentiment analysis"
+    },
+    "emotions": {
+      "type": "object",
+      "properties": {
+        "joy": {
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "optional": true
+        },
+        "sadness": {
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "optional": true
+        },
+        "anger": {
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "optional": true
+        },
+        "fear": {
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "optional": true
+        },
+        "surprise": {
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "optional": true
+        },
+        "disgust": {
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "optional": true
+        }
+      },
+      "description": "Detected emotions and their intensities",
+      "optional": true
+    },
+    "aspects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "aspect": {
+            "type": "string",
+            "description": "Aspect being discussed"
+          },
+          "sentiment": {
+            "type": "string",
+            "enum": ["positive", "negative", "neutral"]
+          },
+          "score": {
+            "type": "number",
+            "min": -1,
+            "max": 1
+          }
+        }
+      },
+      "description": "Aspect-based sentiment analysis",
+      "optional": true
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "Explanation for the sentiment analysis"
+    }
+  }
+}

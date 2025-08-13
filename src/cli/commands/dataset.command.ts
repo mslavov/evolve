@@ -21,7 +21,7 @@ export function createDatasetCommand() {
 function createBuildCommand() {
   return new Command('build')
     .description('Build dataset from assessed runs')
-    .option('-v, --version <version>', 'Dataset version')
+    .option('--dataset-version <version>', 'Dataset version')
     .option('-s, --split <split>', 'Dataset split (train/validation/test)')
     .option('-q, --quality <quality>', 'Quality filter (high/medium/low)')
     .option('--min-confidence <value>', 'Minimum confidence threshold', parseFloat)
@@ -34,7 +34,7 @@ function createBuildCommand() {
         const assessmentService = new AssessmentService(db);
         
         const result = await assessmentService.buildDataset({
-          version: options.version,
+          version: options.datasetVersion,
           split: options.split,
           quality: options.quality,
           minConfidence: options.minConfidence,
@@ -56,7 +56,7 @@ function createBuildCommand() {
 function createExportCommand() {
   return new Command('export')
     .description('Export dataset for training/evaluation')
-    .option('-v, --version <version>', 'Dataset version to export')
+    .option('--dataset-version <version>', 'Dataset version to export')
     .option('-s, --split <split>', 'Dataset split to export')
     .option('-f, --format <format>', 'Export format (json/jsonl)', 'json')
     .option('-o, --output <file>', 'Output file path')
@@ -68,7 +68,7 @@ function createExportCommand() {
         const assessmentService = new AssessmentService(db);
         
         const data = await assessmentService.exportDataset({
-          version: options.version,
+          version: options.datasetVersion,
           split: options.split,
           format: options.format,
         });
@@ -146,7 +146,7 @@ function createStatsCommand() {
 function createClearCommand() {
   return new Command('clear')
     .description('Clear dataset records')
-    .option('-v, --version <version>', 'Clear specific version')
+    .option('--dataset-version <version>', 'Clear specific version')
     .option('-s, --split <split>', 'Clear specific split')
     .option('--confirm', 'Confirm the action', false)
     .action(async (options) => {
@@ -163,7 +163,7 @@ function createClearCommand() {
         const assessmentService = new AssessmentService(db);
         
         const deleted = await assessmentService.clearDataset({
-          version: options.version,
+          version: options.datasetVersion,
           split: options.split,
         });
         

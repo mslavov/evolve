@@ -50,19 +50,20 @@ pnpm dashboard
 ## 📂 Project Structure
 
 ```
-self-improving-scorer/
+evolve/
 ├── src/
-│   ├── agents/          # AI scoring agents
 │   ├── cli/             # Command-line interface
-│   ├── collectors/      # Data collection & storage
-│   ├── datasets/        # Benchmark datasets
-│   ├── evaluators/      # Performance evaluation
-│   ├── optimizers/      # Configuration optimization
-│   ├── prompts/         # Prompt templates
+│   │   └── commands/    # CLI commands (run, agent, assess, improve)
+│   ├── services/        # Business logic services
+│   │   ├── agents/      # AI agents (evaluation, research, optimization)
+│   │   └── orchestration/ # Flow orchestrator and state management
+│   ├── repositories/    # Data access layer
+│   ├── db/              # Database schema and migrations
+│   ├── schemas/         # Zod validation schemas
 │   └── types/           # TypeScript definitions
 ├── docs/
 │   ├── api/             # API documentation
-│   ├── tech/            # Technical guides
+│   ├── guides/          # User guides
 │   └── system-overview.md
 ├── .claude/
 │   └── rules/           # Project-specific rules
@@ -153,6 +154,9 @@ pnpm exec tsc --noEmit
 
 ### Database Management
 ```bash
+# Run migrations
+pnpm db:migrate
+
 # View database
 sqlite3 scoring-data.db
 
@@ -160,7 +164,8 @@ sqlite3 scoring-data.db
 cp scoring-data.db scoring-data.backup.db
 
 # Query examples
-sqlite3 scoring-data.db "SELECT COUNT(*) FROM scoring_records;"
+sqlite3 scoring-data.db "SELECT COUNT(*) FROM runs;"
+sqlite3 scoring-data.db "SELECT * FROM agents;"
 ```
 
 ## 📋 Project Rules
@@ -177,19 +182,19 @@ sqlite3 scoring-data.db "SELECT COUNT(*) FROM scoring_records;"
 
 ## 🎯 Usage Examples
 
-### Basic Scoring
+### Basic Agent Run
 ```bash
-pnpm score "What is machine learning?"
+pnpm cli run "What is machine learning?"
 ```
 
-### File-based Scoring
+### File-based Input
 ```bash
-pnpm score -- -f article.txt
+pnpm cli run --input-file article.json
 ```
 
-### Ground Truth Collection
+### Run with Output Collection
 ```bash
-pnpm score -- -g "Advanced React patterns"
+pnpm cli run "Advanced React patterns" --collect --output-file results.json
 ```
 
 ### Performance Evaluation

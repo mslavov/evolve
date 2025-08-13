@@ -8,7 +8,7 @@ export const agents = sqliteTable('agents', {
   // Agent identity
   name: text('name').notNull(),
   type: text('type', { 
-    enum: ['system', 'user', 'scorer', 'evaluator', 'optimizer', 'researcher', 'generator'] 
+    enum: ['system', 'user', 'scorer', 'evaluator', 'optimizer', 'researcher', 'generator', 'classifier', 'extractor', 'summarizer', 'translator'] 
   }).notNull().default('user'),
   
   // Agent configuration
@@ -20,7 +20,6 @@ export const agents = sqliteTable('agents', {
   // Output configuration
   outputType: text('output_type', { enum: ['structured', 'text'] }).notNull().default('structured'),
   outputSchema: text('output_schema', { mode: 'json' }).$type<Record<string, any>>(),
-  schemaVersion: text('schema_version'),
   
   // Performance metrics
   averageScore: real('average_score'),

@@ -3,6 +3,13 @@ import { agents } from '../db/schema/agents.js';
 import { eq, and, desc } from 'drizzle-orm';
 import type { Agent, NewAgent } from '../db/schema/agents.js';
 
+export interface AgentFilters {
+  isActive?: boolean;
+  isSystemAgent?: boolean;
+  type?: string;
+  model?: string;
+}
+
 export class AgentRepository {
   constructor(private readonly db: Database) {}
   
@@ -94,6 +101,37 @@ export class AgentRepository {
       .from(agents)
       .where(eq(agents.isActive, true))
       .orderBy(desc(agents.createdAt));
+  }
+  
+  /**
+   * Find agents with filters
+   */
+  async findMany(filters?: AgentFilters): Promise<Agent[]> {
+    let query = this.db.select().from(agents);
+    
+    const conditions = [];
+    
+    if (filters?.isActive !== undefined) {
+      conditions.push(eq(agents.isActive, filters.isActive));
+    }
+    
+    if (filters?.isSystemAgent !== undefined) {
+      conditions.push(eq(agents.isSystemAgent, filters.isSystemAgent));
+    }
+    
+    if (filters?.type) {
+      conditions.push(eq(agents.type, filters.type as any));
+    }
+    
+    if (filters?.model) {
+      conditions.push(eq(agents.model, filters.model));
+    }
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+    
+    return await (query.orderBy(desc(agents.createdAt)) as any);
   }
   
   /**

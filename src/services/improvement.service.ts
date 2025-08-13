@@ -1,6 +1,5 @@
 import { Database } from '../db/client.js';
 import { AgentRepository } from '../repositories/agent.repository.js';
-import { ConfigRepository } from '../repositories/config.repository.js';
 import { RunRepository } from '../repositories/run.repository.js';
 import { EvalDatasetRepository } from '../repositories/eval-dataset.repository.js';
 import { PromptService, type PromptGenerationStrategy } from './prompt.service.js';
@@ -17,8 +16,7 @@ import { HybridEvaluator } from './evaluation/strategies/hybrid.strategy.js';
 import type { OptimizationParams as FlowOptimizationParams } from './orchestration/optimization-state.js';
 
 export interface OptimizationParams {
-  baseConfigKey?: string; // Backward compatibility
-  baseAgentKey?: string; // New preferred option
+  baseAgentKey: string; // Agent to optimize
   variations?: {
     models?: string[];
     temperatures?: number[];
@@ -50,7 +48,6 @@ export interface PromptImprovementParams {
 
 export class ImprovementService {
   private agentRepo: AgentRepository;
-  private configRepo: ConfigRepository; // Keep for backward compatibility
   private runRepo: RunRepository;
   private evalDatasetRepo: EvalDatasetRepository;
   private promptService: PromptService;
@@ -62,7 +59,6 @@ export class ImprovementService {
 
   constructor(db: Database) {
     this.agentRepo = new AgentRepository(db);
-    this.configRepo = new ConfigRepository(db);
     this.runRepo = new RunRepository(db);
     this.evalDatasetRepo = new EvalDatasetRepository(db);
     this.promptService = new PromptService(db);
@@ -114,22 +110,22 @@ export class ImprovementService {
    * Run iterative optimization using the flow orchestrator
    */
   async runIterativeOptimization(params: {
-    baseConfigKey: string;
+    baseAgentKey: string;
     targetScore?: number;
     maxIterations?: number;
     evaluationStrategy?: string;
     enableResearch?: boolean;
     verbose?: boolean;
   }): Promise<any> {
-    // Get base configuration
-    const baseConfig = await this.configRepo.findByKey(params.baseConfigKey);
-    if (!baseConfig) {
-      throw new Error(`Base configuration ${params.baseConfigKey} not found`);
+    // Get base agent
+    const baseAgent = await this.agentRepo.findByKey(params.baseAgentKey);
+    if (!baseAgent) {
+      throw new Error(`Base agent ${params.baseAgentKey} not found`);
     }
 
     // Prepare flow optimization parameters
     const flowParams: FlowOptimizationParams = {
-      baseConfig,
+      baseConfig: baseAgent,
       targetScore: params.targetScore || 0.9,
       maxIterations: params.maxIterations || 10,
       minImprovement: 0.01,
@@ -152,17 +148,21 @@ export class ImprovementService {
     // Run iterative optimization
     const result = await this.flowOrchestrator.runOptimizationFlow(flowParams, flowConfig);
 
-    // Save the optimized configuration
-    const optimizedKey = `${params.baseConfigKey}_flow_optimized_${Date.now()}`;
-    const optimizedConfig = await this.configRepo.create({
+    // Save the optimized agent
+    const optimizedKey = `${params.baseAgentKey}_flow_optimized_${Date.now()}`;
+    const optimizedAgent = await this.agentRepo.create({
       key: optimizedKey,
+      name: `Flow-optimized from ${params.baseAgentKey}`,
+      type: result.finalConfig.type,
       model: result.finalConfig.model,
       temperature: result.finalConfig.temperature,
       promptId: result.finalConfig.promptId,
       maxTokens: result.finalConfig.maxTokens,
-      description: `Flow-optimized from ${params.baseConfigKey}`,
+      outputType: result.finalConfig.outputType,
+      outputSchema: result.finalConfig.outputSchema,
+      description: `Flow-optimized from ${params.baseAgentKey}`,
       metadata: {
-        baseConfig: params.baseConfigKey,
+        baseAgent: params.baseAgentKey,
         optimizationDate: new Date(),
         iterations: result.iterations,
         finalScore: result.finalScore,
@@ -173,7 +173,7 @@ export class ImprovementService {
     });
 
     // Update performance metrics
-    await this.configRepo.updatePerformanceMetrics(
+    await this.agentRepo.updatePerformanceMetrics(
       optimizedKey,
       result.finalScore,
       false
@@ -183,7 +183,7 @@ export class ImprovementService {
     const analysis = this.flowOrchestrator.analyzeOptimizationHistory(result);
 
     return {
-      optimizedConfig,
+      optimizedAgent,
       result,
       analysis,
     };
@@ -193,36 +193,13 @@ export class ImprovementService {
    * Optimize configuration by testing variations
    */
   async optimizeConfiguration(params: OptimizationParams): Promise<OptimizationResult> {
-    // Get base agent (support both agent and config keys)
-    const agentKey = params.baseAgentKey || params.baseConfigKey;
+    // Get base agent
+    const agentKey = params.baseAgentKey;
     if (!agentKey) {
-      throw new Error('Either baseAgentKey or baseConfigKey must be provided');
+      throw new Error('baseAgentKey must be provided');
     }
 
-    let baseAgent = await this.agentRepo.findByKey(agentKey);
-
-    // Fallback: try to find as config and convert
-    if (!baseAgent && params.baseConfigKey) {
-      const config = await this.configRepo.findByKey(params.baseConfigKey);
-      if (config) {
-        // Create agent from config
-        baseAgent = await this.agentRepo.create({
-          key: config.key,
-          name: config.description || `Agent: ${config.key}`,
-          type: 'scorer',
-          model: config.model,
-          temperature: config.temperature,
-          maxTokens: config.maxTokens || undefined,
-          promptId: config.promptId,
-          outputType: config.outputType || 'structured',
-          outputSchema: config.outputSchema,
-          schemaVersion: config.schemaVersion || undefined,
-          isDefault: config.isDefault,
-          isActive: config.isActive,
-          isSystemAgent: false,
-        });
-      }
-    }
+    const baseAgent = await this.agentRepo.findByKey(agentKey);
 
     if (!baseAgent) {
       throw new Error(`Base agent ${agentKey} not found`);
@@ -274,7 +251,6 @@ export class ImprovementService {
       maxTokens: bestVariation.agent.maxTokens || baseAgent.maxTokens,
       outputType: bestVariation.agent.outputType || baseAgent.outputType,
       outputSchema: bestVariation.agent.outputSchema || baseAgent.outputSchema,
-      schemaVersion: bestVariation.agent.schemaVersion || baseAgent.schemaVersion,
       description: `Optimized from ${agentKey}`,
       metadata: {
         baseAgent: agentKey,
@@ -340,12 +316,12 @@ export class ImprovementService {
     const matched = versionRuns
       .map(run => {
         const groundTruth = evalData.find(
-          e => e.inputContent === run.inputContent
+          e => e.input === run.input
         );
         return groundTruth ? {
           run,
-          groundTruth: groundTruth.groundTruthScore,
-          error: run.outputScore - groundTruth.groundTruthScore
+          groundTruth: groundTruth.correctedScore,
+          error: run.outputScore - groundTruth.correctedScore
         } : null;
       })
       .filter(Boolean) as Array<{
@@ -364,7 +340,7 @@ export class ImprovementService {
       .filter(m => Math.abs(m.error) > 0.2)
       .slice(0, 5)
       .map(m => ({
-        input: m.run.inputContent.substring(0, 100) + '...',
+        input: m.run.input.substring(0, 100) + '...',
         currentScore: m.run.outputScore,
         expectedScore: m.groundTruth,
         issue: this.identifyIssue(m.error),
@@ -481,7 +457,6 @@ export class ImprovementService {
             maxTokens: baseAgent.maxTokens || undefined,
             outputType: baseAgent.outputType,
             outputSchema: baseAgent.outputSchema,
-            schemaVersion: baseAgent.schemaVersion || undefined,
           });
         }
       }
@@ -529,7 +504,7 @@ export class ImprovementService {
     try {
       for (const data of testData) {
         const result = await this.agentService.run(
-          data.inputContent,
+          data.input,
           { agentKey }
         );
 
@@ -538,7 +513,7 @@ export class ImprovementService {
           ? result.output.score
           : 0;
 
-        const error = score - data.groundTruthScore;
+        const error = score - data.correctedScore;
 
         totalScore += score;
         totalError += error;
@@ -576,7 +551,7 @@ export class ImprovementService {
 
     for (const data of testData) {
       const result = await this.agentService.run(
-        data.inputContent,
+        data.input,
         { agentKey: agent.key }
       );
 
@@ -584,8 +559,8 @@ export class ImprovementService {
       const score = typeof result.output === 'object' && result.output.score !== undefined
         ? result.output.score
         : 0;
-      const error = Math.abs(score - data.groundTruthScore);
-      const type = data.inputType || 'general';
+      const error = Math.abs(score - data.correctedScore);
+      const type = data.metadata.inputType || 'general';
 
       if (!errorsByType[type]) errorsByType[type] = [];
       errorsByType[type].push(error);
@@ -604,11 +579,11 @@ export class ImprovementService {
 
     // Analyze by score range
     const lowScoreErrors = testData
-      .filter(d => d.groundTruthScore < 0.3)
+      .filter(d => d.correctedScore < 0.3)
       .length;
 
     const highScoreErrors = testData
-      .filter(d => d.groundTruthScore > 0.7)
+      .filter(d => d.correctedScore > 0.7)
       .length;
 
     if (lowScoreErrors > testData.length * 0.3) {

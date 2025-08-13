@@ -1,10 +1,10 @@
-import type { Config } from '../../db/schema/configs.js';
+import type { Agent } from '../../db/schema/agents.js';
 import type { 
-  EvaluationConfig, 
   EvaluationContext,
   DetailedEvaluation,
   EvaluationResult,
   AggregationMethod,
+  EvaluationConfig,
 } from '../evaluation/types.js';
 import { EvaluationRegistry } from '../evaluation/registry.js';
 import { PatternAnalyzer } from '../evaluation/pattern-analyzer.js';
@@ -16,7 +16,7 @@ export interface PredictionResult {
   metadata?: Record<string, any>;
 }
 
-export interface CombineStrategiesConfig {
+export interface CombineStrategiesAgent {
   strategies: string[];
   aggregation: AggregationMethod;
   weights?: number[];
@@ -38,11 +38,11 @@ export class EvaluationAgent {
    * Evaluate configuration with pluggable strategies
    */
   async evaluate(
-    config: Config,
+    agent: Agent,
     evaluationConfig?: EvaluationConfig
   ): Promise<DetailedEvaluation> {
     // Run predictions on test set
-    const predictions = await this.runPredictions(config);
+    const predictions = await this.runPredictions(agent);
     const context = this.analyzeContext(predictions);
     
     let evaluationResult: EvaluationResult;
@@ -108,11 +108,11 @@ export class EvaluationAgent {
    * Evaluate with historical context
    */
   async evaluateWithHistory(
-    config: Config,
+    agent: Agent,
     previousEvaluations: DetailedEvaluation[],
     evaluationConfig?: EvaluationConfig
   ): Promise<DetailedEvaluation> {
-    const evaluation = await this.evaluate(config, evaluationConfig);
+    const evaluation = await this.evaluate(agent, evaluationConfig);
     
     // Track pattern evolution
     this.patternAnalyzer.trackPatternEvolution(
@@ -155,7 +155,7 @@ export class EvaluationAgent {
   /**
    * Run predictions using the agent service
    */
-  private async runPredictions(config: Config): Promise<PredictionResult> {
+  private async runPredictions(agent: Agent): Promise<PredictionResult> {
     // This would typically load test data and run predictions
     // For now, returning mock data structure
     // In real implementation, this would:
@@ -171,7 +171,7 @@ export class EvaluationAgent {
       data: predictions,
       groundTruth,
       metadata: {
-        configId: config.id,
+        agentId: agent.id,
         timestamp: new Date(),
       },
     };
@@ -221,7 +221,7 @@ export class EvaluationAgent {
    */
   private async runMultipleStrategies(
     predictions: PredictionResult,
-    config: CombineStrategiesConfig
+    config: CombineStrategiesAgent
   ): Promise<{ result: EvaluationResult; strategiesUsed: string[] }> {
     // Run strategies in parallel
     const results = await Promise.all(

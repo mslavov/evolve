@@ -84,23 +84,58 @@ pnpm install
 cp .env.example .env
 # Add your OpenAI or Anthropic API keys
 
-# Initialize database
+# Initialize database (creates system agents)
 pnpm db:migrate
 ```
 
-### Basic Usage
+### Workflow
 
+#### 1. Define Your Agent
 ```bash
-# Run agent
+# Create a custom agent with your prompt and configuration
+pnpm cli agent set myagent \
+  --name "My Custom Agent" \
+  --type scorer \
+  --model gpt-4o \
+  --temperature 0.7 \
+  --prompt "Your custom prompt here"
+
+# Set as default agent
+pnpm cli agent default myagent
+```
+
+#### 2. Run Your Agent
+```bash
+# Run with text input
 pnpm cli run "Your content to process"
-# Or with JSON input:
+
+# Or with JSON input
 pnpm cli run --input-file input.json
 
-# Run iterative optimization
-pnpm improve optimize baseconfig --iterations 10
+# Save output for assessment
+pnpm cli run "Your content" --output-file results.json
+```
 
-# View evolution history
-pnpm improve stats
+#### 3. Assess & Build Dataset
+```bash
+# List runs pending assessment
+pnpm cli assess pending
+
+# Add assessments
+pnpm cli assess add <runId> correct
+pnpm cli assess add <runId> incorrect --score 0.8
+
+# Build evaluation dataset from assessments
+pnpm cli dataset build
+```
+
+#### 4. Optimize Your Agent
+```bash
+# Run iterative optimization
+pnpm cli improve optimize myagent --iterations 10 --target 0.9
+
+# View optimization history
+pnpm cli improve stats
 ```
 
 ### Programmatic Usage
@@ -213,20 +248,33 @@ pnpm dataset build
 pnpm dataset export -o dataset.json
 ```
 
-### Configuration Management
+### Agent Management
 
 ```bash
-# List agents
-pnpm agent list
+# List all agents (system and user-defined)
+pnpm cli agent list
 
-# Create new agent
-pnpm agent set myagent --name "My Agent" --type scorer --model gpt-4o --temperature 0.3
+# Create new agent with inline prompt
+pnpm cli agent set myagent \
+  --name "My Agent" \
+  --type scorer \
+  --model gpt-4o \
+  --temperature 0.3 \
+  --prompt "Your evaluation prompt here"
 
-# Set as default
-pnpm agent default myagent
+# Create agent with prompt from file
+pnpm cli agent set myagent \
+  --name "My Agent" \
+  --type scorer \
+  --model gpt-4o \
+  --temperature 0.3 \
+  --prompt-file prompts/my-prompt.txt
 
-# Note: 'config' command still works for backward compatibility
-pnpm config list  # Alias for 'agent list'
+# Set as default agent
+pnpm cli agent default myagent
+
+# View agent details
+pnpm cli agent show myagent
 ```
 
 ### Optimization

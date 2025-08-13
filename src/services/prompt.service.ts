@@ -138,7 +138,7 @@ export class PromptService {
     
     for (const data of testData) {
       // Use the agent's run method
-      const formattedPrompt = this.formatPrompt(prompt.template, data.inputContent);
+      const formattedPrompt = this.formatPrompt(prompt.template, data.input);
       const result = await agentService.run(formattedPrompt);
       
       // Extract score from output
@@ -146,12 +146,12 @@ export class PromptService {
         ? result.output.score 
         : 0;
       
-      const error = Math.abs(score - data.groundTruthScore);
+      const error = Math.abs(score - data.correctedScore);
       totalError += error;
       totalSquaredError += error * error;
       
       predictions.push(score);
-      actuals.push(data.groundTruthScore);
+      actuals.push(data.correctedScore);
     }
     
     const mae = totalError / testData.length;

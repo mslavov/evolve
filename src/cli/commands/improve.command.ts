@@ -39,7 +39,7 @@ function createOptimizeCommand() {
         };
         
         const result = await improvementService.optimizeConfiguration({
-          baseConfigKey: baseConfig,
+          baseAgentKey: baseConfig,
           variations,
           testDataVersion: options.testVersion,
           sampleSize: options.sampleSize,

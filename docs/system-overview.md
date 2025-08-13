@@ -2,7 +2,7 @@
 
 ## Project Summary
 
-The **Self-Improving Content Usefulness Scorer** is an AI-powered system that evaluates text content usefulness on a 0-1 scale. It continuously improves its scoring accuracy through automated evaluation, prompt optimization, and model parameter tuning using Mastra framework integration.
+**Evolve** is a framework for building self-improving AI agents that evolve with every interaction. It enables agents to continuously improve their performance through automated evaluation, prompt optimization, and model parameter tuning. While currently implemented with Mastra framework, Evolve's architecture supports any TypeScript-based agent framework.
 
 ## Technology Stack
 
@@ -73,43 +73,45 @@ The **Self-Improving Content Usefulness Scorer** is an AI-powered system that ev
 
 ## Core Components
 
-### 1. Usefulness Scorer Agent (`/src/agents/usefulness-scorer.ts`)
-The main AI agent that performs content scoring using Mastra framework:
+### 1. Agent System (`/src/services/agents/`)
+Specialized AI agents that work together for optimization:
+- **Evaluation Agent**: Runs evaluations with configurable strategies
+- **Research Agent**: Finds improvement strategies from knowledge sources
+- **Optimization Agent**: Implements improvements based on research
 - Configurable model selection (GPT-4, Claude)
 - Temperature and token control
-- Prompt version management
 - Structured output with Zod schemas
 
-### 2. Storage Layer (`/src/storage/`)
-Flexible storage abstraction with multiple implementations:
-- **Interfaces** (`interfaces.ts`): Storage contracts for scoring and configuration
-- **SQLite Storage** (`sqlite/`): Production storage using unified database
-- **JSON Storage** (`json/`): Optional lightweight config storage for development
-- **Memory Storage** (`memory/`): In-memory implementation for testing
-- **Factory Pattern** (`factory.ts`): Configurable storage backend selection
+### 2. Repository Layer (`/src/repositories/`)
+Data access layer using Drizzle ORM:
+- **Agent Repository**: Manages agent configurations and defaults
+- **Run Repository**: Stores execution history and results
+- **Assessment Repository**: Tracks human assessments of runs
+- **Dataset Repository**: Manages evaluation datasets
+- **Prompt Repository**: Version control for prompts
 
-### 3. Scoring Collector (`/src/collectors/scoring-collector.ts`)
-Facade over storage layer:
-- Maintains backward compatibility
-- Delegates to storage interfaces
-- Records scoring history with full metadata
-- Tracks ground truth labels
-- Provides statistical aggregations
+### 3. Service Layer (`/src/services/`)
+Business logic and orchestration:
+- **Agent Service**: Manages agent lifecycle and execution
+- **Assessment Service**: Handles run assessments and dataset building
+- **Improvement Service**: Coordinates iterative optimization
+- **Orchestration**: Flow orchestrator for multi-agent collaboration
+- **Prompt Service**: Dynamic prompt management
 
-### 4. Scoring Evaluator (`/src/evaluators/scoring-evaluator.ts`)
-Analyzes scoring performance:
-- Calculates accuracy metrics (MAE, RMSE)
-- Measures correlation with ground truth
-- Assesses scoring consistency
-- Generates performance reports
+### 4. Evaluation System (`/src/services/evaluation/`)
+Pluggable evaluation architecture:
+- Multiple evaluation strategies (numeric, fact-based, hybrid)
+- Pattern analysis for failure identification
+- Feedback synthesis for actionable improvements
+- Performance metrics (MAE, RMSE, correlation)
 
-### 5. Configuration Optimizer (`/src/optimizers/config-optimizer.ts`)
-Improves scoring accuracy:
-- Tests different model configurations
-- Optimizes temperature settings
-- Analyzes error patterns
-- Recommends improvements
-- **Saves optimal configurations to database**
+### 5. Flow Orchestrator (`/src/services/orchestration/flow.orchestrator.ts`)
+Manages iterative optimization:
+- Coordinates multi-agent collaboration
+- Handles state persistence and recovery
+- Implements convergence detection
+- Tests different configurations
+- **Saves optimal agents to database**
 
 ### 6. Prompt Library (`/src/prompts/prompt-library.ts`)
 Manages scoring prompts:
@@ -118,40 +120,42 @@ Manages scoring prompts:
 - Chain-of-thought variations
 - Few-shot examples
 
-### 7. CLI Interface (`/src/cli/index.ts`)
+### 7. CLI Interface (`/src/cli/`)
 Command-line interface for all operations:
-- Interactive scoring mode
-- Benchmark evaluation
-- Performance dashboard
-- Ground truth collection
-- **Configuration management commands**
+- `run` - Execute agents with various inputs
+- `agent` - Manage agent configurations
+- `assess` - Human assessment of runs
+- `improve` - Iterative optimization
+- `prompt` - Prompt management
+- `dataset` - Dataset operations
 
 ## Data Flow
 
 1. **Input Phase**
-   - User provides content via CLI or file
-   - Content type detection (code, text, list)
-   - Length and metadata extraction
+   - User provides content via CLI or JSON file
+   - Support for structured data and metadata
+   - Content validation with Zod schemas
 
-2. **Scoring Phase**
+2. **Execution Phase**
    - Agent processes content with current configuration
-   - Generates structured score with reasoning
-   - Records dimensional breakdown
+   - Generates structured output
+   - Records run in database
 
-3. **Collection Phase**
-   - Stores scoring record in SQLite
-   - Optionally collects human ground truth
-   - Calculates performance metrics
+3. **Assessment Phase**
+   - Human assessment of run results
+   - Build evaluation datasets from assessments
+   - Track performance metrics
 
 4. **Evaluation Phase**
-   - Aggregates scoring records
-   - Computes accuracy metrics
-   - Identifies error patterns
+   - Multiple evaluation strategies
+   - Pattern analysis and failure identification
+   - Feedback synthesis
 
 5. **Optimization Phase**
-   - Tests alternative configurations
-   - Validates improvements
-   - Updates optimal settings
+   - Research-driven improvements
+   - Multi-agent collaboration
+   - Iterative refinement until convergence
+   - Automatic agent updates
 
 ## Environment Configuration
 
@@ -163,19 +167,21 @@ ANTHROPIC_API_KEY=sk-ant-...   # For Claude models
 ```
 
 ### Storage Configuration
-The system uses a unified SQLite database for both scoring records and configurations:
+The system uses a unified SQLite database managed with Drizzle ORM:
 - **Database File**: `./scoring-data.db`
 - **Tables**: 
-  - `scoring_records` - Scoring history and ground truth
-  - `agent_configs` - Saved configurations
-  - `config_defaults` - Default configuration setting
+  - `agents` - Agent configurations and system agents
+  - `runs` - Execution history and results
+  - `assessments` - Human assessments of runs
+  - `eval_datasets` - Evaluation datasets
+  - `prompts` - Prompt versions and templates
 
-Configurations are persisted and survive process restarts. Use CLI commands to manage:
+Agents are persisted and survive process restarts. Use CLI commands to manage:
 ```bash
-npm run agent list              # List all agents
-npm run agent set <name>        # Create or update an agent
-npm run agent default <name>    # Set default agent
-# Note: 'config' commands still work for backward compatibility
+pnpm cli agent list              # List all agents
+pnpm cli agent set <key>         # Create or update an agent
+pnpm cli agent default <key>     # Set default agent
+pnpm cli agent clone <src> <dst> # Clone an existing agent
 ```
 
 ### MCP Server Integration

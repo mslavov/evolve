@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Self-Improving Scorer CLI provides a comprehensive command-line interface for content scoring, evaluation, and optimization tasks.
+The Evolve CLI provides a comprehensive command-line interface for running agents, managing configurations, assessing results, and optimizing performance through iterative improvement.
 
 ## Installation & Setup
 
@@ -43,9 +43,9 @@ pnpm cli run "Content" --output-file results.json
 - `--collect` - Collect this run for assessment
 - `--verbose` - Show detailed output
 
-### `score [content]` (Deprecated)
+### `score [content]` (Removed)
 
-Alias for `run` command. Use `run` instead.
+This command has been removed. Use `run` instead.
 
 **Output:**
 - Numerical score (0-1)
@@ -153,79 +153,73 @@ pnpm improve -- --auto
 - Configurations to test
 - Expected improvement percentage
 
-### `benchmark`
+### `agent`
 
-Run standardized benchmark evaluation.
-
-**Usage:**
-```bash
-pnpm benchmark
-pnpm benchmark -- -n 10
-```
-
-**Options:**
-- `-n, --number <count>` - Number of benchmark items (default: 5)
-
-**Features:**
-- Tests against pre-labeled dataset
-- Calculates error metrics
-- Stores results with ground truth
-- Provides performance assessment
-
-### `dashboard`
-
-Display performance statistics dashboard.
+Manage agent configurations.
 
 **Usage:**
 ```bash
-pnpm dashboard
+pnpm cli agent list                    # List all agents
+pnpm cli agent get <key>               # Show agent details
+pnpm cli agent set <key> [options]     # Create/update agent
+pnpm cli agent default <key>           # Set default agent
+pnpm cli agent clone <src> <dst>        # Clone agent
+pnpm cli agent delete <key>            # Delete agent
 ```
 
-**Displays:**
-- Current configuration
-- Performance metrics
-- Historical statistics
-- Model usage breakdown
+**Set Options:**
+- `--name <name>` - Agent display name
+- `--type <type>` - Agent type (scorer, classifier, extractor, etc.)
+- `--model <model>` - LLM model to use
+- `--temperature <temp>` - Temperature setting (0-1)
+- `--max-tokens <tokens>` - Maximum tokens
+- `--prompt <prompt>` - Agent prompt template
+- `--prompt-file <path>` - Load prompt from file
 
-**Example Output:**
-```
-┌─────────────────────────────────────────────┐
-│        Usefulness Scorer Performance         │
-├─────────────────────────────────────────────┤
-│ Current Configuration:                       │
-│   Model: gpt-4o-mini                        │
-│   Temperature: 0.3                          │
-│   Prompt: v3_chain_of_thought              │
-├─────────────────────────────────────────────┤
-│ Performance Metrics:                         │
-│   MAE: 0.087                               │
-│   RMSE: 0.112                              │
-│   Correlation: 0.823                       │
-│   Consistency: 0.901                       │
-├─────────────────────────────────────────────┤
-│ Statistics:                                  │
-│   Total Scores: 1247                       │
-│   With Ground Truth: 89                    │
-│   Average Score: 0.534                     │
-│   Models Used: 3                           │
-└─────────────────────────────────────────────┘
-```
+### `assess`
 
-### `interactive`
-
-Enter interactive scoring mode for continuous scoring.
+Manage human assessments of agent runs.
 
 **Usage:**
 ```bash
-pnpm dev interactive
+pnpm cli assess pending                # List runs pending assessment
+pnpm cli assess list                   # List all assessments
+pnpm cli assess add <runId> <result>   # Add assessment
+pnpm cli assess stats                  # Show assessment statistics
 ```
 
-**Commands in Interactive Mode:**
-- `exit/quit` - Exit interactive mode
-- `config` - Show current configuration
-- `stats` - Display statistics
-- `benchmark` - Run quick benchmark
-- `[any text]` - Score the provided text
+**Assessment Results:**
+- `correct` - Output was correct
+- `incorrect` - Output was incorrect
+- `partial` - Output was partially correct
+
+**Options for add:**
+- `--score <score>` - Numeric score (0-1)
+- `--notes <notes>` - Additional notes
+
+### `prompt`
+
+Manage prompt templates.
+
+**Usage:**
+```bash
+pnpm cli prompt list                   # List all prompts
+pnpm cli prompt get <key>              # Show prompt details
+pnpm cli prompt set <key> <content>    # Create/update prompt
+pnpm cli prompt delete <key>           # Delete prompt
+```
+
+### `dataset`
+
+Manage evaluation datasets.
+
+**Usage:**
+```bash
+pnpm cli dataset list                  # List datasets
+pnpm cli dataset build                 # Build from assessments
+pnpm cli dataset show <name>           # Show dataset details
+pnpm cli dataset delete <name>         # Delete dataset
+```
 
 ## Script Shortcuts
 
@@ -234,13 +228,12 @@ The package.json provides convenient shortcuts:
 ```json
 {
   "scripts": {
-    "dev": "tsx src/cli/index.ts",
+    "cli": "tsx src/cli/index.ts",
     "build": "tsc",
-    "score": "tsx src/cli/index.ts score",
-    "evaluate": "tsx src/cli/index.ts evaluate",
-    "improve": "tsx src/cli/index.ts improve",
-    "benchmark": "tsx src/cli/index.ts benchmark",
-    "dashboard": "tsx src/cli/index.ts dashboard"
+    "db:migrate": "tsx src/scripts/migrate.ts",
+    "test": "vitest",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix"
   }
 }
 ```

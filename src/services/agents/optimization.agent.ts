@@ -1,4 +1,4 @@
-import type { Config } from '../../db/schema/configs.js';
+import type { Agent } from '../../db/schema/agents.js';
 import type { 
   DetailedEvaluation, 
   ResearchInsight,
@@ -11,11 +11,11 @@ import { Database } from '../../db/client.js';
 export interface OptimizationStrategy {
   type: 'prompt' | 'parameter' | 'model' | 'hybrid';
   name: string;
-  apply: (config: Config, insights: ResearchInsight[]) => Promise<Config>;
+  apply: (config: Agent, insights: ResearchInsight[]) => Promise<Agent>;
 }
 
-export interface ConfigVariation {
-  config: Config;
+export interface AgentVariation {
+  config: Agent;
   strategy: string;
   changes: string[];
   expectedImprovement: number;
@@ -37,10 +37,10 @@ export class OptimizationAgent {
    * Optimize configuration based on evaluation and research
    */
   async optimize(
-    current: Config,
+    current: Agent,
     evaluation: DetailedEvaluation,
     research: ResearchInsight[]
-  ): Promise<Config> {
+  ): Promise<Agent> {
     // Apply research-driven strategies
     const strategies = this.selectStrategies(research, evaluation);
     
@@ -137,11 +137,11 @@ export class OptimizationAgent {
    * Generate configuration variations
    */
   private async generateVariations(
-    current: Config,
+    current: Agent,
     strategies: OptimizationStrategy[],
     research: ResearchInsight[]
-  ): Promise<ConfigVariation[]> {
-    const variations: ConfigVariation[] = [];
+  ): Promise<AgentVariation[]> {
+    const variations: AgentVariation[] = [];
     
     for (const strategy of strategies) {
       // Apply strategy to generate variations
@@ -176,7 +176,7 @@ export class OptimizationAgent {
   /**
    * Select best variation through testing
    */
-  private async selectBestVariation(variations: ConfigVariation[]): Promise<Config> {
+  private async selectBestVariation(variations: AgentVariation[]): Promise<Agent> {
     // Sort by expected improvement
     variations.sort((a, b) => b.expectedImprovement - a.expectedImprovement);
     
@@ -188,7 +188,7 @@ export class OptimizationAgent {
   /**
    * Optimize prompt based on insights
    */
-  private async optimizePrompt(config: Config, insights: ResearchInsight[]): Promise<Config> {
+  private async optimizePrompt(config: Agent, insights: ResearchInsight[]): Promise<Agent> {
     const newConfig = { ...config };
     
     // Extract prompt improvement strategies from insights
@@ -225,7 +225,7 @@ export class OptimizationAgent {
   /**
    * Tune parameters based on insights
    */
-  private async tuneParameters(config: Config, insights: ResearchInsight[]): Promise<Config> {
+  private async tuneParameters(config: Agent, insights: ResearchInsight[]): Promise<Agent> {
     const newConfig = { ...config };
     
     // Extract parameter recommendations
@@ -251,7 +251,7 @@ export class OptimizationAgent {
   /**
    * Select optimal model based on insights
    */
-  private async selectModel(config: Config, insights: ResearchInsight[]): Promise<Config> {
+  private async selectModel(config: Agent, insights: ResearchInsight[]): Promise<Agent> {
     const newConfig = { ...config };
     
     // Check if more powerful model is recommended
@@ -286,7 +286,7 @@ export class OptimizationAgent {
   /**
    * Apply multiple optimization strategies
    */
-  private async hybridOptimization(config: Config, insights: ResearchInsight[]): Promise<Config> {
+  private async hybridOptimization(config: Agent, insights: ResearchInsight[]): Promise<Agent> {
     let optimized = { ...config };
     
     // Apply each optimization in sequence
@@ -301,10 +301,10 @@ export class OptimizationAgent {
    * Generate parameter variations
    */
   private async generateParameterVariations(
-    config: Config,
+    config: Agent,
     insights: ResearchInsight[]
-  ): Promise<ConfigVariation[]> {
-    const variations: ConfigVariation[] = [];
+  ): Promise<AgentVariation[]> {
+    const variations: AgentVariation[] = [];
     
     // Temperature variations
     const temperatures = [0.1, 0.3, 0.5, 0.7, 0.9];
@@ -429,7 +429,7 @@ export class OptimizationAgent {
   /**
    * Document changes between configurations
    */
-  private documentChanges(original: Config, optimized: Config): string[] {
+  private documentChanges(original: Agent, optimized: Agent): string[] {
     const changes: string[] = [];
     
     if (original.model !== optimized.model) {

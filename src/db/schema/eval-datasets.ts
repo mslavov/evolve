@@ -5,43 +5,26 @@ import { assessments } from './assessments';
 
 export const evalDatasets = sqliteTable('eval_datasets', {
   id: text('id').primaryKey().$defaultFn(() => createId()),
-  runId: text('run_id').references(() => runs.id, { onDelete: 'set null' }),
-  assessmentId: text('assessment_id').references(() => assessments.id, { onDelete: 'set null' }),
+  runId: text('run_id').notNull().references(() => runs.id, { onDelete: 'cascade' }),
+  assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
   
-  // Input data
-  inputContent: text('input_content').notNull(),
-  inputType: text('input_type'),
-  inputMetadata: text('input_metadata', { mode: 'json' }).$type<Record<string, any>>(),
-  
-  // Ground truth
-  groundTruthScore: real('ground_truth_score').notNull(),
-  groundTruthReasoning: text('ground_truth_reasoning'),
-  groundTruthSource: text('ground_truth_source', { 
-    enum: ['assessment', 'human', 'consensus', 'synthetic'] 
-  }).notNull(),
-  groundTruthDimensions: text('ground_truth_dimensions', { mode: 'json' }).$type<{
-    clarity?: number;
-    relevance?: number;
-    completeness?: number;
-    actionability?: number;
-    accuracy?: number;
-  }>(),
+  // Data fields
+  input: text('input').notNull(),
+  expectedOutput: text('expected_output').notNull(),
+  agentOutput: text('agent_output').notNull(),
+  correctedScore: real('corrected_score'),
+  verdict: text('verdict').notNull(),
   
   // Dataset metadata
-  datasetVersion: text('dataset_version'),
-  datasetSplit: text('dataset_split', { enum: ['train', 'validation', 'test'] }),
-  datasetTags: text('dataset_tags', { mode: 'json' }).$type<string[]>(),
-  datasetQuality: text('dataset_quality', { enum: ['high', 'medium', 'low'] }),
+  datasetType: text('dataset_type').notNull().default('evaluation'),
+  metadata: text('metadata', { mode: 'json' }).$type<Record<string, any>>(),
   
   // Timestamps
-  addedAt: integer('added_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
-  runIdIdx: index('eval_run_id_idx').on(table.runId),
-  assessmentIdIdx: index('eval_assessment_id_idx').on(table.assessmentId),
-  versionIdx: index('eval_version_idx').on(table.datasetVersion),
-  splitIdx: index('eval_split_idx').on(table.datasetSplit),
-  qualityIdx: index('eval_quality_idx').on(table.datasetQuality),
+  datasetTypeIdx: index('eval_dataset_type_idx').on(table.datasetType),
+  runIdx: index('eval_run_idx').on(table.runId),
+  assessmentIdx: index('eval_assessment_idx').on(table.assessmentId),
 }));
 
 export type EvalDataset = typeof evalDatasets.$inferSelect;

@@ -65,9 +65,6 @@ export class AssessmentService {
     
     const assessment = await this.assessmentRepo.create(assessmentData);
     
-    // Update the run's assessment status
-    await this.runRepo.updateAssessmentStatus(params.runId, 'assessed');
-    
     // Automatically add to eval dataset if assessment is high confidence
     if (params.confidence && params.confidence >= 0.8) {
       await this.addToDataset(run, assessment, {
@@ -93,17 +90,24 @@ export class AssessmentService {
     skipped: number;
     version: string;
   }> {
-    // Get assessed runs
-    const runs = await this.runRepo.findMany({
-      assessmentStatus: 'assessed',
-    });
+    // Get all runs and filter for those with assessments
+    const allRuns = await this.runRepo.findMany({});
+    const runs = [];
+    
+    // Filter runs that have assessments
+    for (const run of allRuns) {
+      const assessments = await this.assessmentRepo.findByRunId(run.id);
+      if (assessments.length > 0) {
+        runs.push(run);
+      }
+    }
     
     const version = params.version || `v${Date.now()}`;
     let added = 0;
     let skipped = 0;
     
     for (const run of runs) {
-      // Get assessments for this run
+      // Get assessments for this run (we know it has assessments from filtering above)
       const assessments = await this.assessmentRepo.findByRunId(run.id);
       
       if (assessments.length === 0) {
@@ -163,13 +167,13 @@ export class AssessmentService {
     
     if (options.format === 'jsonl') {
       return records.map(r => JSON.stringify({
-        input: r.inputContent,
-        groundTruth: r.groundTruthScore,
-        reasoning: r.groundTruthReasoning,
+        input: r.input,
+        groundTruth: r.correctedScore,
+        reasoning: r.metadata.reasoning,
         metadata: {
           id: r.id,
-          source: r.groundTruthSource,
-          quality: r.datasetQuality,
+          source: r.metadata.source,
+          quality: r.metadata.quality,
         },
       })).join('\n');
     }
@@ -188,8 +192,13 @@ export class AssessmentService {
    * Mark runs as skipped for assessment
    */
   async skipRuns(runIds: string[]): Promise<void> {
+    // Note: Since runs don't have assessment status field,
+    // we're using the absence of assessment records to indicate skipped status
+    // In the future, we could add metadata to runs or create a separate tracking table
     for (const runId of runIds) {
-      await this.runRepo.updateAssessmentStatus(runId, 'skipped');
+      // For now, we just log that these runs are being skipped
+      // The absence of assessment records will indicate they were skipped
+      console.log(`Marking run ${runId} as skipped for assessment`);
     }
   }
   
@@ -216,22 +225,32 @@ export class AssessmentService {
       source?: 'assessment' | 'human' | 'consensus';
     }
   ): Promise<void> {
+    // Extract score from output if it's structured
+    let outputScore = 0;
+    if (typeof run.output === 'object' && run.output.score !== undefined) {
+      outputScore = run.output.score;
+    }
+    
     const datasetRecord: NewEvalDataset = {
       runId: run.id,
       assessmentId: assessment.id,
-      inputContent: run.inputContent,
-      inputType: run.inputType || undefined,
-      inputMetadata: run.inputMetadata,
-      groundTruthScore: assessment.verdict === 'correct' 
-        ? run.outputScore 
-        : (assessment.correctedScore || run.outputScore),
-      groundTruthReasoning: assessment.reasoning || run.outputReasoning,
-      groundTruthSource: options.source || 'assessment',
-      groundTruthDimensions: run.outputDimensions,
-      datasetVersion: options.version,
-      datasetSplit: options.split || this.determineSplit(),
-      datasetQuality: options.quality,
-      datasetTags: this.generateTags(run, assessment),
+      input: run.input,
+      expectedOutput: run.expectedOutput || JSON.stringify(run.output),
+      agentOutput: JSON.stringify(run.output),
+      correctedScore: assessment.verdict === 'correct' 
+        ? undefined 
+        : assessment.correctedScore,
+      verdict: assessment.verdict,
+      datasetType: 'evaluation',
+      metadata: {
+        source: options.source || 'assessment',
+        quality: options.quality,
+        split: options.split || 'train',
+        version: options.version,
+        reasoning: assessment.reasoning,
+        confidence: assessment.confidence,
+        agentId: run.agentId,
+      },
     };
     
     await this.evalDatasetRepo.create(datasetRecord);
@@ -273,8 +292,8 @@ export class AssessmentService {
     tags.push(`assessor:${assessment.assessedBy}`);
     
     // Add content type tag
-    if (run.inputType) {
-      tags.push(`type:${run.inputType}`);
+    if (run.metadata.inputType) {
+      tags.push(`type:${run.metadata.inputType}`);
     }
     
     // Add score range tag

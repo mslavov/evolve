@@ -1,14 +1,12 @@
-// @ts-nocheck
-import { eq, desc, and, gte, lte, sql, inArray } from 'drizzle-orm';
-import { BaseRepository } from './base.repository.js';
-import { runs, type Run, type NewRun } from '../db/schema/runs.js';
 import { Database } from '../db/client.js';
+import { runs, assessments } from '../db/schema/index.js';
+import type { Run, NewRun } from '../db/schema/runs.js';
+import { eq, and, gte, lte, desc, sql, isNull } from 'drizzle-orm';
 
 export interface RunFilters {
-  assessmentStatus?: 'pending' | 'assessed' | 'skipped';
-  model?: string;
-  minScore?: number;
-  maxScore?: number;
+  agentId?: string;
+  parentRunId?: string;
+  runType?: string;
   startDate?: Date;
   endDate?: Date;
   limit?: number;
@@ -16,28 +14,24 @@ export interface RunFilters {
 
 export interface RunStats {
   totalRuns: number;
-  pendingAssessment: number;
-  assessed: number;
-  skipped: number;
-  averageScore: number;
-  byModel: Record<string, { count: number; avgScore: number }>;
+  pendingCount: number;
+  assessedCount: number;
+  byAgent: Record<string, number>;
 }
 
-export class RunRepository extends BaseRepository {
-  constructor(db: Database) {
-    super(db);
-  }
+export class RunRepository {
+  constructor(private readonly db: Database) {}
   
   /**
    * Create a new run
    */
   async create(data: NewRun): Promise<Run> {
-    const [run] = await this.db.insert(runs).values(data).returning();
-    return run;
+    const result = await this.db.insert(runs).values(data).returning();
+    return result[0];
   }
   
   /**
-   * Get a run by ID
+   * Find a run by ID
    */
   async findById(id: string): Promise<Run | null> {
     const [run] = await this.db
@@ -45,7 +39,6 @@ export class RunRepository extends BaseRepository {
       .from(runs)
       .where(eq(runs.id, id))
       .limit(1);
-    
     return run || null;
   }
   
@@ -55,119 +48,162 @@ export class RunRepository extends BaseRepository {
   async findMany(filters?: RunFilters): Promise<Run[]> {
     const conditions = [];
     
-    if (filters?.assessmentStatus) {
-      conditions.push(eq(runs.assessmentStatus, filters.assessmentStatus));
+    if (filters?.agentId) {
+      conditions.push(eq(runs.agentId, filters.agentId));
     }
     
-    if (filters?.model) {
-      conditions.push(eq(runs.configModel, filters.model));
+    if (filters?.parentRunId) {
+      conditions.push(eq(runs.parentRunId, filters.parentRunId));
     }
     
-    if (filters?.minScore !== undefined) {
-      conditions.push(gte(runs.outputScore, filters.minScore));
-    }
-    
-    if (filters?.maxScore !== undefined) {
-      conditions.push(lte(runs.outputScore, filters.maxScore));
+    if (filters?.runType) {
+      conditions.push(eq(runs.runType, filters.runType));
     }
     
     if (filters?.startDate) {
-      conditions.push(gte(runs.timestamp, filters.startDate));
+      conditions.push(gte(runs.createdAt, filters.startDate));
     }
     
     if (filters?.endDate) {
-      conditions.push(lte(runs.timestamp, filters.endDate));
+      conditions.push(lte(runs.createdAt, filters.endDate));
     }
     
     let query = this.db
       .select()
       .from(runs)
-      .orderBy(desc(runs.timestamp));
+      .orderBy(desc(runs.createdAt));
     
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      query = query.where(and(...conditions)) as any;
     }
     
     if (filters?.limit) {
-      query = query.limit(filters.limit);
+      query = query.limit(filters.limit) as any;
     }
     
-    return await query as any;
+    return await query;
   }
   
   /**
-   * Update a run's assessment status
-   */
-  async updateAssessmentStatus(
-    id: string, 
-    status: 'pending' | 'assessed' | 'skipped'
-  ): Promise<void> {
-    await this.db
-      .update(runs)
-      .set({ 
-        assessmentStatus: status,
-        updatedAt: new Date()
-      })
-      .where(eq(runs.id, id));
-  }
-  
-  /**
-   * Get runs pending assessment
-   */
-  async findPendingAssessment(limit?: number): Promise<Run[]> {
-    return this.findMany({
-      assessmentStatus: 'pending',
-      limit
-    });
-  }
-  
-  /**
-   * Find pending runs (alias for findPendingAssessment)
+   * Find runs pending assessment (runs without assessments)
    */
   async findPending(limit?: number): Promise<Run[]> {
-    return this.findPendingAssessment(limit);
+    let query = this.db
+      .select({
+        run: runs,
+      })
+      .from(runs)
+      .leftJoin(assessments, eq(runs.id, assessments.runId))
+      .where(isNull(assessments.id))
+      .orderBy(desc(runs.createdAt));
+    
+    if (limit) {
+      query = query.limit(limit) as any;
+    }
+    
+    const results = await query;
+    return results.map(r => r.run);
   }
   
   /**
-   * Get statistics about runs
+   * Find all runs
+   */
+  async findAll(): Promise<Run[]> {
+    return await this.db
+      .select()
+      .from(runs)
+      .orderBy(desc(runs.createdAt));
+  }
+  
+  /**
+   * Find runs by agent
+   */
+  async findByAgent(agentId: string): Promise<Run[]> {
+    return await this.db
+      .select()
+      .from(runs)
+      .where(eq(runs.agentId, agentId))
+      .orderBy(desc(runs.createdAt));
+  }
+  
+  /**
+   * Find child runs
+   */
+  async findChildren(parentRunId: string): Promise<Run[]> {
+    return await this.db
+      .select()
+      .from(runs)
+      .where(eq(runs.parentRunId, parentRunId))
+      .orderBy(runs.iteration);
+  }
+  
+  /**
+   * Update a run
+   */
+  async update(id: string, data: Partial<NewRun>): Promise<Run> {
+    const result = await this.db
+      .update(runs)
+      .set(data)
+      .where(eq(runs.id, id))
+      .returning();
+    return result[0];
+  }
+  
+  /**
+   * Delete a run
+   */
+  async delete(id: string): Promise<void> {
+    await this.db.delete(runs).where(eq(runs.id, id));
+  }
+  
+  /**
+   * Get run statistics
    */
   async getStats(): Promise<RunStats> {
-    const statsQuery = await this.db
-      .select({
-        totalRuns: sql<number>`count(*)`,
-        pendingCount: sql<number>`sum(case when ${runs.assessmentStatus} = 'pending' then 1 else 0 end)`,
-        assessedCount: sql<number>`sum(case when ${runs.assessmentStatus} = 'assessed' then 1 else 0 end)`,
-        skippedCount: sql<number>`sum(case when ${runs.assessmentStatus} = 'skipped' then 1 else 0 end)`,
-        avgScore: sql<number>`avg(${runs.outputScore})`,
-      })
+    // Get total runs
+    const [{ total }] = await this.db
+      .select({ total: sql<number>`count(*)` })
       .from(runs);
     
-    const modelStats = await this.db
+    // Get assessed count
+    const [{ assessed }] = await this.db
+      .select({ assessed: sql<number>`count(distinct ${assessments.runId})` })
+      .from(assessments);
+    
+    // Get runs by agent
+    const byAgentResults = await this.db
       .select({
-        model: runs.configModel,
+        agentId: runs.agentId,
         count: sql<number>`count(*)`,
-        avgScore: sql<number>`avg(${runs.outputScore})`,
       })
       .from(runs)
-      .groupBy(runs.configModel);
+      .groupBy(runs.agentId);
     
-    const stats = statsQuery[0];
-    const byModel: Record<string, { count: number; avgScore: number }> = {};
-    
-    for (const modelStat of modelStats) {
-      byModel[modelStat.model] = {
-        count: modelStat.count,
-        avgScore: modelStat.avgScore,
-      };
+    const byAgent: Record<string, number> = {};
+    for (const row of byAgentResults) {
+      if (row.agentId) {
+        byAgent[row.agentId] = row.count;
+      }
     }
     
     return {
-      totalRuns: stats.totalRuns || 0,
-      pendingAssessment: stats.pendingCount || 0,
-      assessed: stats.assessedCount || 0,
-      skipped: stats.skippedCount || 0,
-      averageScore: stats.avgScore || 0,
-      byModel,
+      totalRuns: total,
+      pendingCount: total - assessed,
+      assessedCount: assessed,
+      byAgent,
     };
+  }
+  
+  /**
+   * Get the latest run for an agent
+   */
+  async findLatestByAgent(agentId: string): Promise<Run | null> {
+    const [run] = await this.db
+      .select()
+      .from(runs)
+      .where(eq(runs.agentId, agentId))
+      .orderBy(desc(runs.createdAt))
+      .limit(1);
+    return run || null;
   }
 }

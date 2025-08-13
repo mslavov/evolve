@@ -81,10 +81,11 @@ function createListPendingCommand() {
         
         for (const run of runs) {
           console.log(chalk.bold(`Run ID: ${run.id}`));
-          console.log(`  Input: ${run.inputContent.substring(0, 100)}...`);
-          console.log(`  Score: ${run.outputScore.toFixed(2)}`);
-          console.log(`  Model: ${run.configModel}`);
-          console.log(`  Timestamp: ${run.timestamp.toISOString()}`);
+          console.log(`  Input: ${run.input.substring(0, 100)}${run.input.length > 100 ? '...' : ''}`);
+          const output = typeof run.output === 'object' ? JSON.stringify(run.output) : run.output;
+          console.log(`  Output: ${output.substring(0, 100)}${output.length > 100 ? '...' : ''}`);
+          console.log(`  Model: ${run.modelUsed}`);
+          console.log(`  Timestamp: ${run.createdAt.toISOString()}`);
           console.log();
         }
       } catch (error) {

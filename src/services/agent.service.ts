@@ -1,20 +1,15 @@
 import { Database } from '../db/client.js';
 import { RunRepository } from '../repositories/run.repository.js';
 import { AgentRepository } from '../repositories/agent.repository.js';
-import { ConfigRepository } from '../repositories/config.repository.js';
 import { PromptService } from './prompt.service.js';
 import { scoringSchema } from '../types/index.js';
 import { providerFactory, type LLMProvider, type LLMMessage } from '../providers/index.js';
-import { schemaRegistry } from './schema-registry.service.js';
-import { z } from 'zod';
 import type { Agent, NewAgent } from '../db/schema/agents.js';
-import type { Config, NewConfig } from '../db/schema/configs.js';
 import type { Run, NewRun } from '../db/schema/runs.js';
 import type { Prompt } from '../db/schema/prompts.js';
 
 export interface RunOptions {
-  configKey?: string; // Backward compatibility
-  agentKey?: string; // New preferred option
+  agentKey?: string; // Agent to use
   parentRunId?: string; // For tracking agent chains
 }
 
@@ -27,7 +22,6 @@ export interface RunResult {
 export class AgentService {
   private runRepo: RunRepository;
   private agentRepo: AgentRepository;
-  private configRepo: ConfigRepository; // Keep for backward compatibility
   private promptService: PromptService;
   private currentAgent: Agent | null = null;
   private currentPrompt: Prompt | null = null;
@@ -37,7 +31,6 @@ export class AgentService {
   constructor(db: Database) {
     this.runRepo = new RunRepository(db);
     this.agentRepo = new AgentRepository(db);
-    this.configRepo = new ConfigRepository(db);
     this.promptService = new PromptService(db);
   }
   
@@ -51,7 +44,6 @@ export class AgentService {
     await this.initialized;
   }
   
-  
   /**
    * Perform actual initialization
    */
@@ -60,51 +52,17 @@ export class AgentService {
     this.currentAgent = await this.agentRepo.findDefault();
     
     if (!this.currentAgent) {
-      // Try to find any active agent
-      const agents = await this.agentRepo.findActive();
+      // Try to find any active user agent (not system)
+      const agents = await this.agentRepo.findMany({ 
+        isActive: true, 
+        isSystemAgent: false 
+      });
       if (agents.length > 0) {
         this.currentAgent = agents[0];
-      } else {
-        // Fallback: try to migrate from configs if no agents exist
-        const defaultConfig = await this.configRepo.findDefault();
-        if (defaultConfig) {
-          // Create agent from config
-          this.currentAgent = await this.agentRepo.create({
-            key: defaultConfig.key,
-            name: defaultConfig.description || `Agent: ${defaultConfig.key}`,
-            type: 'scorer',
-            model: defaultConfig.model,
-            temperature: defaultConfig.temperature,
-            maxTokens: defaultConfig.maxTokens || undefined,
-            promptId: defaultConfig.promptId,
-            outputType: defaultConfig.outputType || 'structured',
-            outputSchema: defaultConfig.outputSchema,
-            schemaVersion: defaultConfig.schemaVersion || undefined,
-            isDefault: defaultConfig.isDefault,
-            isActive: defaultConfig.isActive,
-            isSystemAgent: false,
-          });
-        } else {
-          // Create a default scorer agent if nothing exists
-          const prodPrompt = await this.promptService.getBestPrompt();
-          const promptId = prodPrompt?.id || 'v1';
-          
-          this.currentAgent = await this.agentRepo.create({
-            key: 'default_scorer',
-            name: 'Default Scorer Agent',
-            type: 'scorer',
-            model: 'gpt-4o-mini',
-            temperature: 0.3,
-            maxTokens: 500,
-            promptId: promptId,
-            isDefault: true,
-            isSystemAgent: false,
-          });
-        }
       }
     }
     
-    // Load the prompt
+    // Load the prompt if we have an agent
     if (this.currentAgent) {
       this.currentPrompt = await this.promptService.getPrompt(this.currentAgent.promptId);
       // Initialize provider based on model
@@ -119,82 +77,41 @@ export class AgentService {
     input: string | Record<string, any>,
     options?: RunOptions
   ): Promise<RunResult> {
-    // Ensure we're initialized (lazy initialization)
+    // Ensure we're initialized
     await this.ensureInitialized();
     
-    if (!this.provider || !this.currentAgent) {
-      throw new Error('Failed to initialize agent service');
-    }
-    
     // Determine which agent to use
-    const agentKey = options?.agentKey || options?.configKey; // Support both for backward compatibility
+    const agentKey = options?.agentKey;
     
     // Load specific agent if requested
-    if (agentKey && agentKey !== this.currentAgent.key) {
-      // Try to load as agent first
-      let agent = await this.agentRepo.findByKey(agentKey);
-      
-      // Fallback: try to load as config and convert to agent
+    if (agentKey) {
+      const agent = await this.agentRepo.findByKey(agentKey);
       if (!agent) {
-        const config = await this.configRepo.findByKey(agentKey);
-        if (config) {
-          // Create or find agent from config
-          agent = await this.agentRepo.findByKey(config.key);
-          if (!agent) {
-            // Create agent from config on the fly
-            agent = await this.agentRepo.create({
-              key: config.key,
-              name: config.description || `Agent: ${config.key}`,
-              type: 'scorer',
-              model: config.model,
-              temperature: config.temperature,
-              maxTokens: config.maxTokens || undefined,
-              promptId: config.promptId,
-              outputType: config.outputType || 'structured',
-              outputSchema: config.outputSchema,
-              schemaVersion: config.schemaVersion || undefined,
-              isDefault: config.isDefault,
-              isActive: config.isActive,
-              isSystemAgent: false,
-            });
-          }
-        }
+        throw new Error(`Agent '${agentKey}' not found`);
       }
-      
-      if (agent) {
-        this.currentAgent = agent;
-        this.currentPrompt = await this.promptService.getPrompt(agent.promptId);
-        this.provider = providerFactory.createProvider(agent.model);
-      }
+      this.currentAgent = agent;
+      this.currentPrompt = await this.promptService.getPrompt(agent.promptId);
+      this.provider = providerFactory.createProvider(agent.model);
     }
     
-    const startTime = Date.now();
-    
-    // Get the prompt
-    if (!this.currentPrompt) {
-      this.currentPrompt = await this.promptService.getPrompt(this.currentAgent.promptId);
+    if (!this.provider || !this.currentAgent || !this.currentPrompt) {
+      throw new Error('No agent available. Please create an agent first using: pnpm cli agent set <key>');
     }
     
-    if (!this.currentPrompt) {
-      throw new Error('Prompt not found for agent');
-    }
+    // Format input
+    const inputStr = typeof input === 'string' ? input : JSON.stringify(input, null, 2);
     
-    // Handle input formatting
-    const inputContent = typeof input === 'string' ? input : JSON.stringify(input);
+    // Apply prompt template
+    const promptText = this.currentPrompt.template.replace('{{input}}', inputStr);
     
-    const promptText = this.promptService.formatPrompt(
-      this.currentPrompt.template,
-      inputContent
-    );
-    
-    // Prepare messages - system prompt comes from the prompt template
+    // Build messages for LLM
     const messages: LLMMessage[] = [];
     
-    // Check if prompt template includes a system message directive
-    if (this.currentPrompt.metadata?.systemPrompt) {
+    // Add system message with schema if structured output is expected
+    if (this.currentAgent.outputType === 'structured' && this.currentAgent.outputSchema) {
       messages.push({
         role: 'system',
-        content: this.currentPrompt.metadata.systemPrompt as string,
+        content: `You must respond with valid JSON that matches this schema:\n${JSON.stringify(this.currentAgent.outputSchema, null, 2)}\n\nDo not include any text before or after the JSON.`,
       });
     }
     
@@ -203,101 +120,76 @@ export class AgentService {
       content: promptText,
     });
     
-    // Determine the output schema to use
-    let outputSchema: z.ZodSchema<any> = scoringSchema; // Default
-    let result: any;
-    let refusal: string | null | undefined = null;
+    // Run the LLM
+    const startTime = Date.now();
+    const result = await this.provider.generateText(messages, {
+      temperature: this.currentAgent.temperature,
+      maxTokens: this.currentAgent.maxTokens || undefined,
+    });
+    const executionTime = Date.now() - startTime;
     
-    if (this.currentAgent.outputSchema) {
-      // Use custom schema from agent
+    // Parse output based on output type
+    let parsedOutput: any;
+    if (this.currentAgent.outputType === 'structured') {
       try {
-        outputSchema = schemaRegistry.createFromJSON(this.currentAgent.outputSchema);
+        // Try to parse as JSON
+        const jsonMatch = result.content.match(/```json\n?([\s\S]*?)\n?```/) || 
+                         result.content.match(/\{[\s\S]*\}/);
+        const jsonStr = jsonMatch ? 
+          (jsonMatch[1] || jsonMatch[0]) : 
+          result.content;
+        
+        parsedOutput = JSON.parse(jsonStr);
+        
+        // outputSchema is passed to the LLM for structured output
+        // No additional validation needed here as the LLM handles it
       } catch (error) {
-        console.warn('Failed to parse custom schema, falling back to default:', error);
-        outputSchema = scoringSchema;
+        console.warn('Failed to parse structured output, using raw output:', error);
+        parsedOutput = result.content;
       }
-    } else if (this.currentAgent.schemaVersion) {
-      // Try to get predefined schema by name/version
-      const schemaDef = schemaRegistry.get(this.currentAgent.schemaVersion);
-      if (schemaDef) {
-        outputSchema = schemaDef.schema;
-      }
-    }
-    
-    // Call provider based on output type
-    if (this.currentAgent.outputType === 'text') {
-      // Use text generation for unstructured output
-      const response = await this.provider.generateText(
-        messages,
-        {
-          model: this.currentAgent.model,
-          temperature: this.currentAgent.temperature,
-          maxTokens: this.currentAgent.maxTokens || 500,
-        }
-      );
-      
-      refusal = response.refusal;
-      result = response.content;
     } else {
-      // Use structured generation (default)
-      const response = await this.provider.generateStructured(
-        messages,
-        outputSchema,
-        {
-          model: this.currentAgent.model,
-          temperature: this.currentAgent.temperature,
-          maxTokens: this.currentAgent.maxTokens || 500,
-        }
-      );
-      
-      refusal = response.refusal;
-      result = response.content;
+      parsedOutput = result.content;
     }
     
-    const endTime = Date.now();
-    
-    // Handle refusal
-    if (refusal) {
-      throw new Error(`Model refused to process input: ${refusal}`);
-    }
-    
-    // Record the run
+    // Save the run
     const runData: NewRun = {
-      inputContent: inputContent,
-      inputLength: inputContent.length,
-      inputType: this.detectContentType(inputContent),
-      outputScore: typeof result === 'object' && result.score !== undefined ? result.score : 0,
-      outputReasoning: typeof result === 'object' ? JSON.stringify(result) : String(result),
-      outputDimensions: typeof result === 'object' ? result.dimensions || result.metadata : undefined,
       agentId: this.currentAgent.id,
-      parentRunId: options?.parentRunId || undefined,
-      configModel: this.currentAgent.model,
-      configTemperature: this.currentAgent.temperature,
-      configPromptVersion: this.currentPrompt!.version,
-      configMaxTokens: this.currentAgent.maxTokens || undefined,
-      telemetryDuration: endTime - startTime,
-      assessmentStatus: 'skipped',
+      parentRunId: options?.parentRunId,
+      input: inputStr,
+      output: parsedOutput,
+      rawOutput: result.content,
+      configSnapshot: {
+        model: this.currentAgent.model,
+        temperature: this.currentAgent.temperature,
+        maxTokens: this.currentAgent.maxTokens,
+        promptVersion: this.currentPrompt.version,
+      },
+      executionTimeMs: executionTime,
+      tokenCount: result.usage?.totalTokens,
+      modelUsed: this.currentAgent.model,
+      temperatureUsed: this.currentAgent.temperature,
+      metadata: {
+        provider: this.provider.name,
+      },
     };
     
     const run = await this.runRepo.create(runData);
     
     return {
-      output: result,
+      output: parsedOutput,
       metadata: {
-        duration: endTime - startTime,
-        model: this.currentAgent.model,
-        promptVersion: this.currentPrompt!.version,
-        agentKey: this.currentAgent.key,
-        agentType: this.currentAgent.type,
+        runId: run.id,
+        executionTime,
+        tokenCount: result.usage?.totalTokens,
       },
       runId: run.id,
     };
   }
   
   /**
-   * Save an agent (new primary method)
+   * Create or update an agent
    */
-  async saveAgent(key: string, agent: Partial<Omit<NewAgent, 'key' | 'id'>>): Promise<Agent> {
+  async saveAgent(key: string, agent: Omit<NewAgent, 'key'>): Promise<Agent> {
     const existing = await this.agentRepo.findByKey(key);
     
     if (existing) {
@@ -305,72 +197,70 @@ export class AgentService {
       return await this.agentRepo.update(existing.id, agent);
     }
     
-    // Create new agent with defaults
+    return await this.agentRepo.create({
+      ...agent,
+      key,
+    });
+  }
+  
+  /**
+   * Create an agent with a prompt
+   */
+  async createAgent(
+    key: string,
+    name: string,
+    promptTemplate: string,
+    options?: {
+      type?: Agent['type'];
+      model?: string;
+      temperature?: number;
+      maxTokens?: number;
+      outputType?: 'structured' | 'text';
+      outputSchema?: Record<string, any>;
+      description?: string;
+      isDefault?: boolean;
+    }
+  ): Promise<Agent> {
+    // Create a prompt for this agent
+    const promptVersion = `${key}_prompt_v1`;
+    const prompt = await this.promptService.createPrompt({
+      version: promptVersion,
+      name: `${name} Prompt`,
+      template: promptTemplate,
+      description: `Prompt for ${name}`,
+    });
+    
+    // Create the agent
     return await this.agentRepo.create({
       key,
-      name: agent.name || `Agent: ${key}`,
-      type: agent.type || 'scorer',
-      model: agent.model || 'gpt-4o-mini',
-      temperature: agent.temperature ?? 0.3,
-      maxTokens: agent.maxTokens,
-      promptId: agent.promptId || 'v1',
-      outputType: agent.outputType || 'structured',
-      outputSchema: agent.outputSchema,
-      schemaVersion: agent.schemaVersion,
-      description: agent.description,
-      tags: agent.tags,
-      metadata: agent.metadata,
-      isDefault: agent.isDefault ?? false,
-      isActive: agent.isActive ?? true,
-      isSystemAgent: agent.isSystemAgent ?? false,
-    });
-  }
-  
-  /**
-   * Save a configuration (backward compatibility)
-   */
-  async saveConfig(key: string, config: Omit<NewConfig, 'key'>): Promise<Config> {
-    const existing = await this.configRepo.findByKey(key);
-    
-    if (existing) {
-      // Update existing config
-      return await this.configRepo.update(existing.id, config);
-    }
-    
-    return await this.configRepo.create({
-      ...config,
-      key,
-    });
-  }
-  
-  /**
-   * Load a configuration
-   */
-  async loadConfig(key: string): Promise<void> {
-    await this.ensureInitialized();
-    const config = await this.configRepo.findByKey(key);
-    
-    if (!config) {
-      throw new Error(`Configuration '${key}' not found`);
-    }
-    
-    this.currentAgent = await this.agentRepo.findByKey(key) || await this.agentRepo.create({
-      key: config.key,
-      name: config.description || `Agent: ${config.key}`,
-      type: 'scorer',
-      model: config.model,
-      temperature: config.temperature,
-      maxTokens: config.maxTokens || undefined,
-      promptId: config.promptId,
-      outputType: config.outputType || 'structured',
-      outputSchema: config.outputSchema,
-      schemaVersion: config.schemaVersion || undefined,
-      isDefault: config.isDefault,
-      isActive: config.isActive,
+      name,
+      type: options?.type || 'user',
+      model: options?.model || 'gpt-4o-mini',
+      temperature: options?.temperature ?? 0.7,
+      maxTokens: options?.maxTokens,
+      promptId: prompt.version,
+      outputType: options?.outputType || 'structured',
+      outputSchema: options?.outputSchema,
+      description: options?.description,
+      isDefault: options?.isDefault ?? false,
       isSystemAgent: false,
     });
-    this.currentPrompt = await this.promptService.getPrompt(config.promptId);
-    this.provider = providerFactory.createProvider(config.model);
+  }
+  
+  /**
+   * Load a specific agent
+   */
+  async loadAgent(key: string): Promise<void> {
+    await this.ensureInitialized();
+    const agent = await this.agentRepo.findByKey(key);
+    
+    if (!agent) {
+      throw new Error(`Agent '${key}' not found`);
+    }
+    
+    this.currentAgent = agent;
+    this.currentPrompt = await this.promptService.getPrompt(agent.promptId);
+    this.provider = providerFactory.createProvider(agent.model);
   }
   
   /**
@@ -382,36 +272,6 @@ export class AgentService {
   }
   
   /**
-   * Get current configuration (backward compatibility)
-   */
-  getCurrentConfig(): Config | null {
-    // Convert agent to config-like structure for backward compatibility
-    if (!this.currentAgent) return null;
-    
-    return {
-      id: this.currentAgent.id,
-      key: this.currentAgent.key,
-      model: this.currentAgent.model,
-      temperature: this.currentAgent.temperature,
-      maxTokens: this.currentAgent.maxTokens || null,
-      promptId: this.currentAgent.promptId,
-      outputType: this.currentAgent.outputType || 'structured',
-      outputSchema: this.currentAgent.outputSchema,
-      schemaVersion: this.currentAgent.schemaVersion || null,
-      averageScore: this.currentAgent.averageScore,
-      evaluationCount: this.currentAgent.evaluationCount || 0,
-      lastEvaluatedAt: this.currentAgent.lastEvaluatedAt || null,
-      description: this.currentAgent.description || null,
-      tags: this.currentAgent.tags || null,
-      metadata: this.currentAgent.metadata || null,
-      isDefault: this.currentAgent.isDefault,
-      isActive: this.currentAgent.isActive,
-      createdAt: this.currentAgent.createdAt,
-      updatedAt: this.currentAgent.updatedAt,
-    } as Config;
-  }
-  
-  /**
    * Get pending runs for assessment
    */
   async getPendingRuns(limit?: number): Promise<Run[]> {
@@ -419,17 +279,13 @@ export class AgentService {
   }
   
   /**
-   * List all agents (new primary method)
+   * List all agents
    */
-  async listAgents(): Promise<Agent[]> {
+  async listAgents(options?: { includeSystem?: boolean }): Promise<Agent[]> {
+    if (options?.includeSystem === false) {
+      return await this.agentRepo.findMany({ isSystemAgent: false });
+    }
     return await this.agentRepo.findAll();
-  }
-  
-  /**
-   * List all configurations (backward compatibility)
-   */
-  async listConfigs(): Promise<Config[]> {
-    return await this.configRepo.findAll();
   }
   
   /**
@@ -440,7 +296,7 @@ export class AgentService {
   }
   
   /**
-   * Set an agent as default (new primary method)
+   * Set an agent as default
    */
   async setDefaultAgent(key: string): Promise<Agent> {
     await this.ensureInitialized();
@@ -458,56 +314,18 @@ export class AgentService {
   }
   
   /**
-   * Set a configuration as default (backward compatibility)
+   * Delete an agent
    */
-  async setDefaultConfig(key: string): Promise<Config> {
-    await this.ensureInitialized();
-    const config = await this.configRepo.findByKey(key);
-    if (!config) {
-      throw new Error(`Configuration '${key}' not found`);
+  async deleteAgent(key: string): Promise<void> {
+    const agent = await this.agentRepo.findByKey(key);
+    if (!agent) {
+      throw new Error(`Agent '${key}' not found`);
     }
     
-    // Use repository method to set default
-    await this.configRepo.setDefault(key);
-    
-    // Return the updated config
-    const updated = await this.configRepo.findByKey(key);
-    return updated!;
-  }
-  
-  
-  
-  /**
-   * List available schemas
-   */
-  listSchemas(): Array<{ name: string; version: string; description?: string }> {
-    return schemaRegistry.getAll().map(s => ({
-      name: s.name,
-      version: s.version,
-      description: s.description,
-    }));
-  }
-  
-  /**
-   * Detect the type of content
-   */
-  private detectContentType(content: string): string {
-    // Check for code patterns
-    if (content.includes('function') || content.includes('class') || content.includes('const')) {
-      return 'code';
+    if (agent.isSystemAgent) {
+      throw new Error('Cannot delete system agents');
     }
     
-    // Check for Markdown patterns
-    if (content.includes('#') || content.includes('```') || content.includes('**')) {
-      return 'markdown';
-    }
-    
-    // Check for HTML patterns
-    if (content.includes('<') && content.includes('>')) {
-      return 'html';
-    }
-    
-    // Default to plain text
-    return 'text';
+    await this.agentRepo.deleteByKey(key);
   }
 }

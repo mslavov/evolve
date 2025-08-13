@@ -38,21 +38,11 @@ Used for question-answering tasks.
 
 ## Usage
 
-### Using a predefined schema
+### Using a schema file
 
 ```bash
-# Use a predefined schema
-pnpm cli agent set myagent --model gpt-4o --schema classification
-
-# Clone and modify
-pnpm cli agent clone default myagent --schema sentiment
-```
-
-### Using a custom schema file
-
-```bash
-# Use a custom schema from file
-pnpm cli agent set myagent --model gpt-4o --schema-file ./schemas/classification.json
+# Use a schema from file
+pnpm cli agent set myagent --name "My Agent" --type classifier --model gpt-4o --schema-file ./schemas/classification.json --prompt "Classify the following content:"
 
 # Create your own schema
 cp schemas/extraction.json my-custom-schema.json
@@ -62,7 +52,7 @@ pnpm cli agent set myagent --schema-file ./my-custom-schema.json
 
 ## Schema Format
 
-Schemas are defined in a simplified JSON format that gets converted to Zod schemas:
+Schemas are defined in JSON format that will be passed to the LLM for structured output generation:
 
 ```json
 {

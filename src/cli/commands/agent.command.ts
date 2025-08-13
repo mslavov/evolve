@@ -13,7 +13,6 @@ export function createAgentCommand() {
     .addCommand(createSetCommand())
     .addCommand(createGetCommand())
     .addCommand(createDefaultCommand())
-    .addCommand(createSchemasCommand())
     .addCommand(createCloneCommand());
   
   return command;
@@ -83,11 +82,12 @@ function createSetCommand() {
     .option('-d, --description <desc>', 'Agent description')
     .option('-m, --model <model>', 'Model to use')
     .option('-t, --temperature <temp>', 'Temperature setting', parseFloat)
-    .option('-p, --prompt <version>', 'Prompt version')
+    .option('-p, --prompt <content>', 'Prompt template content (use {{input}} for the input placeholder)')
+    .option('--prompt-id <version>', 'Existing prompt version ID')
+    .option('--prompt-file <path>', 'Path to file containing prompt template')
     .option('--max-tokens <n>', 'Maximum tokens', parseInt)
     .option('--output-type <type>', 'Output type: structured or text', 'structured')
-    .option('--schema <name>', 'Predefined schema name (scoring, classification, extraction, summarization, translation)')
-    .option('--schema-file <path>', 'Path to JSON file containing custom schema definition')
+    .option('--schema-file <path>', 'Path to JSON file containing custom output schema')
     .option('--default', 'Set as default agent', false)
     .action(async (key, options) => {
       const spinner = ora('Saving agent...').start();
@@ -98,30 +98,59 @@ function createSetCommand() {
         
         // Handle schema configuration
         let outputSchema = undefined;
-        let schemaVersion = undefined;
         
         if (options.schemaFile) {
           // Load custom schema from file
           const fs = await import('fs/promises');
           const schemaContent = await fs.readFile(options.schemaFile, 'utf-8');
           outputSchema = JSON.parse(schemaContent);
-        } else if (options.schema) {
-          // Use predefined schema
-          schemaVersion = options.schema;
         }
         
-        const agent = await agentService.saveAgent(key, {
-          name: options.name,
-          type: options.type,
-          description: options.description,
-          model: options.model,
-          temperature: options.temperature,
-          promptId: options.prompt,
-          maxTokens: options.maxTokens,
-          outputType: options.outputType,
-          outputSchema,
-          schemaVersion,
-        });
+        // Handle prompt - either inline content, file, or existing prompt ID
+        let agent;
+        if (options.prompt || options.promptFile) {
+          // Create agent with new prompt
+          let promptContent = options.prompt;
+          if (options.promptFile) {
+            const fs = await import('fs/promises');
+            promptContent = await fs.readFile(options.promptFile, 'utf-8');
+          }
+          
+          if (!promptContent) {
+            throw new Error('Prompt content is required when creating a new agent');
+          }
+          
+          agent = await agentService.createAgent(
+            key,
+            options.name || key,
+            promptContent,
+            {
+              type: options.type,
+              model: options.model || 'gpt-4o-mini',
+              temperature: options.temperature ?? 0.7,
+              maxTokens: options.maxTokens,
+              outputType: options.outputType,
+              outputSchema,
+              description: options.description,
+              isDefault: false,
+            }
+          );
+        } else if (options.promptId) {
+          // Use existing prompt
+          agent = await agentService.saveAgent(key, {
+            name: options.name || key,
+            type: options.type,
+            description: options.description,
+            model: options.model || 'gpt-4o-mini',
+            temperature: options.temperature ?? 0.7,
+            promptId: options.promptId,
+            maxTokens: options.maxTokens,
+            outputType: options.outputType,
+            outputSchema,
+          });
+        } else {
+          throw new Error('Either --prompt, --prompt-file, or --prompt-id is required');
+        }
         
         if (options.default) {
           await agentService.setDefaultAgent(key);
@@ -204,46 +233,12 @@ function createDefaultCommand() {
     });
 }
 
-function createSchemasCommand() {
-  return new Command('schemas')
-    .description('List available output schemas')
-    .action(async () => {
-      const spinner = ora('Loading schemas...').start();
-      
-      try {
-        const db = getDatabase();
-        const agentService = new AgentService(db);
-        
-        const schemas = agentService.listSchemas();
-        
-        spinner.stop();
-        
-        console.log(chalk.cyan('\n📋 Available Schemas:\n'));
-        
-        for (const schema of schemas) {
-          console.log(chalk.bold(schema.name) + chalk.gray(` v${schema.version}`));
-          if (schema.description) {
-            console.log(`  ${schema.description}`);
-          }
-          console.log();
-        }
-        
-        console.log(chalk.gray('\nUse these with: pnpm cli agent set <key> --schema <name>'));
-        console.log(chalk.gray('Or provide custom schema: pnpm cli agent set <key> --schema-file <path>'));
-      } catch (error) {
-        spinner.fail('Failed to load schemas');
-        console.error(chalk.red('Error:'), error);
-        process.exit(1);
-      }
-    });
-}
 
 function createCloneCommand() {
   return new Command('clone')
     .description('Clone an existing agent')
     .argument('<source>', 'Source agent key')
     .argument('<target>', 'Target agent key')
-    .option('--schema <name>', 'Override with predefined schema')
     .option('--output-type <type>', 'Override output type (structured or text)')
     .action(async (source, target, options) => {
       const spinner = ora('Cloning agent...').start();
@@ -270,10 +265,6 @@ function createCloneCommand() {
           averageScore: null,
           lastEvaluatedAt: null,
         };
-        
-        if (options.schema) {
-          clonedData.schemaVersion = options.schema;
-        }
         if (options.outputType) {
           clonedData.outputType = options.outputType;
         }
@@ -288,9 +279,6 @@ function createCloneCommand() {
         console.log(chalk.gray(`Name: ${cloned.name}`));
         console.log(chalk.gray(`Type: ${cloned.type}`));
         console.log(chalk.gray(`Model: ${cloned.model}, Temperature: ${cloned.temperature}`));
-        if (cloned.schemaVersion) {
-          console.log(chalk.gray(`Schema: ${cloned.schemaVersion}`));
-        }
       } catch (error) {
         spinner.fail('Failed to clone agent');
         console.error(chalk.red('Error:'), error);

@@ -1,4 +1,4 @@
-import type { Config } from '../../db/schema/configs.js';
+import type { Agent } from '../../db/schema/agents.js';
 import type { 
   DetailedFeedback, 
   ImprovementStep, 
@@ -7,7 +7,7 @@ import type {
 } from '../evaluation/types.js';
 
 export interface OptimizationParams {
-  baseConfig: Config;
+  baseConfig: Agent;
   targetScore: number;
   maxIterations: number;
   minImprovement: number;
@@ -17,7 +17,7 @@ export interface OptimizationParams {
 }
 
 export interface OptimizationResult {
-  finalConfig: Config;
+  finalConfig: Agent;
   finalScore: number;
   iterations: number;
   history: ImprovementStep[];
@@ -27,7 +27,7 @@ export interface OptimizationResult {
 }
 
 export class OptimizationState {
-  public currentConfig: Config;
+  public currentConfig: Agent;
   public iterationCount: number = 0;
   public score: number = 0;
   public feedback: DetailedFeedback | null = null;
@@ -87,7 +87,7 @@ export class OptimizationState {
    * Update state with new evaluation results
    */
   update(
-    config: Config,
+    config: Agent,
     evaluation: DetailedEvaluation,
     research?: ResearchInsight[]
   ): void {
@@ -304,7 +304,7 @@ export class OptimizationState {
   /**
    * Get best configuration from history
    */
-  getBestConfiguration(): { config: Config; score: number } | null {
+  getBestConfiguration(): { config: Agent; score: number } | null {
     if (this.improvementHistory.length === 0) {
       return null;
     }

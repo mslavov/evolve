@@ -50,7 +50,7 @@ export class EvalDatasetRepository extends BaseRepository {
     const conditions = [];
     
     if (filters?.source) {
-      conditions.push(eq(evalDatasets.groundTruthSource, filters.source));
+      conditions.push(eq(evalDatasets.metadata.source, filters.source));
     }
     
     if (filters?.split) {
@@ -62,15 +62,15 @@ export class EvalDatasetRepository extends BaseRepository {
     }
     
     if (filters?.quality) {
-      conditions.push(eq(evalDatasets.datasetQuality, filters.quality));
+      conditions.push(eq(evalDatasets.metadata.quality, filters.quality));
     }
     
     if (filters?.minScore !== undefined) {
-      conditions.push(gte(evalDatasets.groundTruthScore, filters.minScore));
+      conditions.push(gte(evalDatasets.correctedScore, filters.minScore));
     }
     
     if (filters?.maxScore !== undefined) {
-      conditions.push(lte(evalDatasets.groundTruthScore, filters.maxScore));
+      conditions.push(lte(evalDatasets.correctedScore, filters.maxScore));
     }
     
     // Note: Tags filtering would require JSON operations
@@ -129,7 +129,7 @@ export class EvalDatasetRepository extends BaseRepository {
     const statsQuery = await this.db
       .select({
         totalRecords: sql<number>`count(*)`,
-        avgScore: sql<number>`avg(${evalDatasets.groundTruthScore})`,
+        avgScore: sql<number>`avg(${evalDatasets.correctedScore})`,
       })
       .from(evalDatasets);
     
@@ -143,19 +143,19 @@ export class EvalDatasetRepository extends BaseRepository {
     
     const sourceStats = await this.db
       .select({
-        source: evalDatasets.groundTruthSource,
+        source: evalDatasets.metadata.source,
         count: sql<number>`count(*)`,
       })
       .from(evalDatasets)
-      .groupBy(evalDatasets.groundTruthSource);
+      .groupBy(evalDatasets.metadata.source);
     
     const qualityStats = await this.db
       .select({
-        quality: evalDatasets.datasetQuality,
+        quality: evalDatasets.metadata.quality,
         count: sql<number>`count(*)`,
       })
       .from(evalDatasets)
-      .groupBy(evalDatasets.datasetQuality);
+      .groupBy(evalDatasets.metadata.quality);
     
     const versions = await this.db
       .selectDistinct({ version: evalDatasets.datasetVersion })

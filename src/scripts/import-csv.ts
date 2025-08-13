@@ -66,13 +66,21 @@ async function importCsv(options: ImportOptions) {
         const validated = csvRecordSchema.parse(record);
         
         validRecords.push({
-          inputContent: validated.input_content,
-          inputType: validated.input_type,
-          inputMetadata: validated.metadata,
-          groundTruthScore: validated.ground_truth_score,
-          groundTruthSource: 'human',
-          datasetVersion: options.version || 'imported',
-          datasetSplit: options.split || 'train',
+          input: validated.input_content,
+          expectedOutput: JSON.stringify({ score: validated.ground_truth_score }),
+          agentOutput: JSON.stringify({ score: validated.ground_truth_score }),
+          correctedScore: validated.ground_truth_score,
+          verdict: 'correct',
+          runId: 'import_' + index,
+          assessmentId: 'import_assess_' + index,
+          datasetType: 'evaluation',
+          metadata: {
+            inputType: validated.input_type,
+            source: 'human',
+            version: options.version || 'imported',
+            split: options.split || 'train',
+            ...validated.metadata
+          },
         });
       } catch (error) {
         if (error instanceof z.ZodError) {
@@ -129,7 +137,7 @@ async function importCsv(options: ImportOptions) {
     console.log(chalk.cyan('Split:'), options.split || 'train');
     
     // Calculate score distribution
-    const scores = validRecords.map(r => r.groundTruthScore);
+    const scores = validRecords.map(r => r.correctedScore);
     const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
     const minScore = Math.min(...scores);
     const maxScore = Math.max(...scores);

@@ -56,7 +56,6 @@ export function createRunCommand() {
         
         const result = await agentService.run(input, {
           agentKey: agentKey,
-          configKey: agentKey, // Keep for backward compatibility
         });
         
         spinner.succeed('Agent executed successfully!');

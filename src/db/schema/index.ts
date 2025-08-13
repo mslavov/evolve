@@ -1,7 +1,6 @@
 export * from './runs';
 export * from './assessments';
 export * from './eval-datasets';
-export * from './configs';
 export * from './prompts';
 export * from './agents';
 

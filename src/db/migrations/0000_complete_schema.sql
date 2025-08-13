@@ -1,7 +1,141 @@
--- Migration: Add system agents and their prompts
--- This migration creates prompt templates and agent entries for system agents
+-- Complete schema for Evolve
+-- This consolidated migration creates all tables with the latest schema
 
--- Insert prompt templates for system agents
+-- Create prompts table
+CREATE TABLE `prompts` (
+	`id` text PRIMARY KEY NOT NULL,
+	`version` text NOT NULL,
+	`name` text NOT NULL,
+	`description` text,
+	`template` text NOT NULL,
+	`variables` text,
+	`mae` real,
+	`correlation` real,
+	`rmse` real,
+	`evaluation_count` integer DEFAULT 0,
+	`last_evaluated_at` integer,
+	`parent_version` text,
+	`created_by` text DEFAULT 'human' NOT NULL,
+	`generation_strategy` text,
+	`tags` text,
+	`metadata` text,
+	`is_active` integer DEFAULT true NOT NULL,
+	`is_tested` integer DEFAULT false NOT NULL,
+	`is_production` integer DEFAULT false NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `prompt_version_idx` ON `prompts` (`version`);--> statement-breakpoint
+CREATE INDEX `prompt_parent_idx` ON `prompts` (`parent_version`);--> statement-breakpoint
+CREATE INDEX `prompt_active_idx` ON `prompts` (`is_active`);--> statement-breakpoint
+CREATE INDEX `prompt_production_idx` ON `prompts` (`is_production`);--> statement-breakpoint
+CREATE UNIQUE INDEX `prompt_version_unique` ON `prompts` (`version`);--> statement-breakpoint
+
+-- Create agents table (without schemaVersion, with extended types)
+CREATE TABLE `agents` (
+	`id` text PRIMARY KEY NOT NULL,
+	`key` text NOT NULL UNIQUE,
+	`name` text NOT NULL,
+	`type` text NOT NULL DEFAULT 'user' CHECK(type IN ('system', 'user', 'scorer', 'evaluator', 'optimizer', 'researcher', 'generator', 'classifier', 'extractor', 'summarizer', 'translator')),
+	`model` text NOT NULL,
+	`temperature` real NOT NULL,
+	`max_tokens` integer,
+	`prompt_id` text NOT NULL,
+	`output_type` text NOT NULL DEFAULT 'structured' CHECK(output_type IN ('structured', 'text')),
+	`output_schema` text,
+	`average_score` real,
+	`evaluation_count` integer DEFAULT 0,
+	`last_evaluated_at` integer,
+	`description` text,
+	`tags` text,
+	`metadata` text,
+	`is_default` integer NOT NULL DEFAULT false,
+	`is_active` integer NOT NULL DEFAULT true,
+	`is_system_agent` integer NOT NULL DEFAULT false,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	FOREIGN KEY (`prompt_id`) REFERENCES `prompts`(`version`) ON UPDATE no action ON DELETE restrict
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `agent_key_idx` ON `agents` (`key`);--> statement-breakpoint
+CREATE INDEX `agent_type_idx` ON `agents` (`type`);--> statement-breakpoint
+CREATE INDEX `agent_system_idx` ON `agents` (`is_system_agent`);--> statement-breakpoint
+CREATE INDEX `agent_default_idx` ON `agents` (`is_default`);--> statement-breakpoint
+CREATE INDEX `agent_active_idx` ON `agents` (`is_active`);--> statement-breakpoint
+
+-- Create runs table
+CREATE TABLE `runs` (
+	`id` text PRIMARY KEY NOT NULL,
+	`agent_id` text NOT NULL,
+	`parent_run_id` text,
+	`input` text NOT NULL,
+	`output` text NOT NULL,
+	`raw_output` text,
+	`expected_output` text,
+	`config_snapshot` text NOT NULL,
+	`reasoning` text,
+	`execution_time_ms` integer,
+	`token_count` integer,
+	`model_used` text,
+	`temperature_used` real,
+	`iteration` integer DEFAULT 0,
+	`run_type` text DEFAULT 'standard' NOT NULL,
+	`metadata` text,
+	`tags` text,
+	`created_at` integer NOT NULL,
+	FOREIGN KEY (`agent_id`) REFERENCES `agents`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`parent_run_id`) REFERENCES `runs`(`id`) ON UPDATE no action ON DELETE set null
+);
+--> statement-breakpoint
+CREATE INDEX `run_agent_idx` ON `runs` (`agent_id`);--> statement-breakpoint
+CREATE INDEX `run_parent_idx` ON `runs` (`parent_run_id`);--> statement-breakpoint
+CREATE INDEX `run_type_idx` ON `runs` (`run_type`);--> statement-breakpoint
+CREATE INDEX `run_iteration_idx` ON `runs` (`iteration`);--> statement-breakpoint
+CREATE INDEX `run_created_idx` ON `runs` (`created_at`);--> statement-breakpoint
+
+-- Create assessments table
+CREATE TABLE `assessments` (
+	`id` text PRIMARY KEY NOT NULL,
+	`run_id` text NOT NULL,
+	`verdict` text NOT NULL,
+	`corrected_score` real,
+	`reasoning` text,
+	`assessed_by` text DEFAULT 'human' NOT NULL,
+	`assessor_id` text,
+	`confidence` real,
+	`metadata` text,
+	`timestamp` integer NOT NULL,
+	`created_at` integer NOT NULL,
+	FOREIGN KEY (`run_id`) REFERENCES `runs`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `assessment_run_id_idx` ON `assessments` (`run_id`);--> statement-breakpoint
+CREATE INDEX `assessment_verdict_idx` ON `assessments` (`verdict`);--> statement-breakpoint
+CREATE INDEX `assessment_assessor_idx` ON `assessments` (`assessor_id`);--> statement-breakpoint
+
+-- Create eval_datasets table
+CREATE TABLE `eval_datasets` (
+	`id` text PRIMARY KEY NOT NULL,
+	`run_id` text NOT NULL,
+	`assessment_id` text NOT NULL,
+	`input` text NOT NULL,
+	`expected_output` text NOT NULL,
+	`agent_output` text NOT NULL,
+	`corrected_score` real,
+	`verdict` text NOT NULL,
+	`dataset_type` text DEFAULT 'evaluation' NOT NULL,
+	`metadata` text,
+	`created_at` integer NOT NULL,
+	FOREIGN KEY (`run_id`) REFERENCES `runs`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`assessment_id`) REFERENCES `assessments`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `eval_dataset_type_idx` ON `eval_datasets` (`dataset_type`);--> statement-breakpoint
+CREATE INDEX `eval_run_idx` ON `eval_datasets` (`run_id`);--> statement-breakpoint
+CREATE INDEX `eval_assessment_idx` ON `eval_datasets` (`assessment_id`);--> statement-breakpoint
+
+-- Insert system agent prompts
 INSERT INTO prompts (id, version, name, description, template, is_active, is_production, metadata, created_at, updated_at)
 VALUES 
   -- Prompt Generator Agent
@@ -154,7 +288,7 @@ Provide:
     unixepoch()
   );
 
--- Insert system agent entries
+-- Insert system agents (without schemaVersion)
 INSERT INTO agents (
   id,
   key,
@@ -166,7 +300,6 @@ INSERT INTO agents (
   prompt_id,
   output_type,
   output_schema,
-  schema_version,
   description,
   is_default,
   is_active,
@@ -186,7 +319,6 @@ VALUES
     1000,
     'prompt_generator_v1',
     'text',
-    NULL,
     NULL,
     'System agent for generating prompt variations and improvements',
     0,
@@ -208,7 +340,6 @@ VALUES
     'research_agent_v1',
     'text',
     NULL,
-    NULL,
     'System agent for conducting research and finding improvement strategies',
     0,
     1,
@@ -229,7 +360,6 @@ VALUES
     'evaluation_agent_v1',
     'structured',
     json('{"type": "object", "properties": {"score": {"type": "number"}, "breakdown": {"type": "object"}, "strengths": {"type": "array"}, "improvements": {"type": "array"}}}'),
-    'evaluation-v1',
     'System agent for evaluating other agents performance',
     0,
     1,
@@ -250,7 +380,6 @@ VALUES
     'optimization_agent_v1',
     'structured',
     json('{"type": "object", "properties": {"recommendations": {"type": "array"}, "priority": {"type": "array"}, "expectedImprovement": {"type": "number"}}}'),
-    'optimization-v1',
     'System agent for optimizing configurations and parameters',
     0,
     1,
@@ -271,7 +400,6 @@ VALUES
     'assessment_agent_v1',
     'structured',
     json('{"type": "object", "properties": {"verdict": {"type": "string", "enum": ["correct", "incorrect"]}, "confidence": {"type": "number"}, "reasoning": {"type": "string"}, "correctedScore": {"type": "number"}, "issues": {"type": "array"}}}'),
-    'assessment-v1',
     'System agent for assessing run quality and correctness',
     0,
     1,

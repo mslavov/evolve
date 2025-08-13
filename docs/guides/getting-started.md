@@ -15,8 +15,8 @@
 
 ### 1. Clone the Repository
 ```bash
-git clone <repository-url>
-cd self-improving-scorer
+git clone git@github.com:mslavov/evolve.git
+cd evolve
 ```
 
 ### 2. Install Dependencies
@@ -40,7 +40,7 @@ OPENAI_API_KEY=sk-proj-...
 ANTHROPIC_API_KEY=sk-ant-api...
 ```
 
-Note: Model configurations are now stored in the SQLite database and persist across sessions. Use the `config` commands to manage them.
+Note: Agent configurations are stored in the SQLite database and persist across sessions. Use the `agent` commands to manage them.
 
 ### 4. Verify Installation
 ```bash
@@ -188,34 +188,34 @@ This will:
 2. Test different configurations
 3. Apply the best settings automatically
 
-### Configuration Management
+### Agent Management
 
-Save and load configurations using CLI:
+Manage agents using CLI:
 ```bash
 # Create a new agent
-pnpm agent set my-agent --name "My Agent" --type scorer --model gpt-4o
+pnpm cli agent set my-agent --name "My Agent" --type scorer --model gpt-4o
 
 # List all agents
-pnpm agent list
+pnpm cli agent list
 
 # Set as default agent
-pnpm agent default my-agent
+pnpm cli agent default my-agent
 
 # Clone an existing agent
-pnpm agent clone default my-custom-agent
+pnpm cli agent clone default my-custom-agent
 ```
 
-Configurations are stored in the SQLite database and persist across sessions.
+Agents are stored in the SQLite database and persist across sessions.
 
 ## File-based Input
 
 ### Text from File
 ```bash
-# Create a file
-echo "Your content here" > content.txt
+# Create a JSON file with content
+echo '{"content": "Your content here"}' > content.json
 
 # Process it
-pnpm cli run -- -f content.txt
+pnpm cli run --input-file content.json
 ```
 
 ### JSON Input
@@ -290,11 +290,17 @@ pnpm cli run -- -f generated-article.txt
 # Require score > 0.6 for publication
 ```
 
-### Training Data Filtering
+### Training Data Collection
 ```bash
-# Score training examples
-pnpm benchmark -- -n 100
-# Use only high-scoring examples
+# Run agent and collect for assessment
+pnpm cli run "Example content" --collect
+
+# Assess runs
+pnpm cli assess pending
+pnpm cli assess add <runId> correct
+
+# Build dataset from assessments
+pnpm cli dataset build
 ```
 
 ## Troubleshooting
@@ -345,6 +351,6 @@ DEBUG=* pnpm cli run "test content"
 
 ### View Logs
 ```bash
-# Check recent scores
-sqlite3 scoring-data.db "SELECT * FROM scoring_records ORDER BY timestamp DESC LIMIT 5;"
+# Check recent runs
+sqlite3 scoring-data.db "SELECT * FROM runs ORDER BY created_at DESC LIMIT 5;"
 ```

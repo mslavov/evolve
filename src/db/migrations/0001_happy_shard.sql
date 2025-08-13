@@ -1,1 +1,0 @@
-DROP TABLE `scoring_records`;

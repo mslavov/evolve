@@ -35,7 +35,6 @@ export const prompts = sqliteTable('prompts', {
   // Timestamps
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
-  testedAt: integer('tested_at', { mode: 'timestamp' }),
 }, (table) => ({
   versionIdx: uniqueIndex('prompt_version_idx').on(table.version),
   activeIdx: index('prompt_active_idx').on(table.isActive),

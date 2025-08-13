@@ -50,7 +50,6 @@ CREATE TABLE `agents` (
 	`description` text,
 	`tags` text,
 	`metadata` text,
-	`is_default` integer NOT NULL DEFAULT false,
 	`is_active` integer NOT NULL DEFAULT true,
 	`is_system_agent` integer NOT NULL DEFAULT false,
 	`created_at` integer NOT NULL,
@@ -61,7 +60,6 @@ CREATE TABLE `agents` (
 CREATE UNIQUE INDEX `agent_key_idx` ON `agents` (`key`);--> statement-breakpoint
 CREATE INDEX `agent_type_idx` ON `agents` (`type`);--> statement-breakpoint
 CREATE INDEX `agent_system_idx` ON `agents` (`is_system_agent`);--> statement-breakpoint
-CREATE INDEX `agent_default_idx` ON `agents` (`is_default`);--> statement-breakpoint
 CREATE INDEX `agent_active_idx` ON `agents` (`is_active`);--> statement-breakpoint
 
 -- Create runs table

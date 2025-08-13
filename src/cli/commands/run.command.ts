@@ -12,8 +12,7 @@ export function createRunCommand() {
   command
     .description('Run an agent with given input')
     .argument('[content]', 'Content to process (optional if using --input-file)')
-    .option('-a, --agent <key>', 'Agent key to use')
-    .option('-c, --config <key>', 'Configuration key to use (deprecated, use --agent)')
+    .requiredOption('-a, --agent <key>', 'Agent key to use (required)')
     .option('-i, --input-file <path>', 'Path to JSON file containing structured input')
     .option('-o, --output-file <path>', 'Path to save output as JSON')
     .option('--collect', 'Collect this run for assessment', false)
@@ -51,8 +50,11 @@ export function createRunCommand() {
         
         spinner.text = 'Processing input...';
         
-        // Prefer --agent over --config
-        const agentKey = options.agent || options.config;
+        // Agent is now required
+        const agentKey = options.agent;
+        if (!agentKey) {
+          throw new Error('Agent key is required. Use --agent <key> to specify an agent.');
+        }
         
         const result = await agentService.run(input, {
           agentKey: agentKey,
@@ -64,7 +66,7 @@ export function createRunCommand() {
         if (options.outputFile) {
           const outputData = {
             timestamp: new Date().toISOString(),
-            agent: agentKey || 'default',
+            agent: agentKey,
             input: input,
             output: result.output,
             metadata: result.metadata,

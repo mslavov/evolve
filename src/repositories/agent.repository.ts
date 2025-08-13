@@ -45,20 +45,6 @@ export class AgentRepository {
     return agent || null;
   }
   
-  /**
-   * Find the default agent
-   */
-  async findDefault(): Promise<Agent | null> {
-    const [agent] = await this.db
-      .select()
-      .from(agents)
-      .where(and(
-        eq(agents.isDefault, true),
-        eq(agents.isActive, true)
-      ))
-      .limit(1);
-    return agent || null;
-  }
   
   /**
    * Find all agents
@@ -149,25 +135,6 @@ export class AgentRepository {
     return updated;
   }
   
-  /**
-   * Set an agent as default
-   */
-  async setDefault(key: string): Promise<void> {
-    // First, unset all defaults
-    await this.db
-      .update(agents)
-      .set({ isDefault: false })
-      .where(eq(agents.isDefault, true));
-    
-    // Then set the new default
-    await this.db
-      .update(agents)
-      .set({ 
-        isDefault: true,
-        updatedAt: new Date(),
-      })
-      .where(eq(agents.key, key));
-  }
   
   /**
    * Update performance metrics for an agent

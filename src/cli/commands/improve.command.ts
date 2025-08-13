@@ -76,15 +76,16 @@ function createOptimizeCommand() {
 
 function createEvaluateCommand() {
   return new Command('evaluate')
-    .description('Evaluate current configuration performance')
-    .action(async () => {
+    .description('Evaluate agent performance')
+    .argument('<agent>', 'Agent key to evaluate')
+    .action(async (agentKey: string) => {
       const spinner = ora('Running evaluation...').start();
       
       try {
         const db = getDatabase();
         const improvementService = new ImprovementService(db);
         
-        const result = await improvementService.evaluateCurrentConfig();
+        const result = await improvementService.evaluateCurrentConfig(agentKey);
         
         spinner.succeed('Evaluation complete!');
         

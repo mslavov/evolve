@@ -371,24 +371,24 @@ export class ImprovementService {
   }
 
   /**
-   * Run evaluation on the current configuration (backward compatibility)
+   * Run evaluation on a specific agent configuration
    */
-  async evaluateCurrentConfig(): Promise<any> {
-    return this.evaluateCurrentAgent();
+  async evaluateCurrentConfig(agentKey: string): Promise<any> {
+    return this.evaluateAgent(agentKey);
   }
 
   /**
-   * Run evaluation on the current agent
+   * Run evaluation on a specific agent
    */
-  async evaluateCurrentAgent(): Promise<{
+  async evaluateAgent(agentKey: string): Promise<{
     metrics: any;
     weaknesses: string[];
     strengths: string[];
   }> {
-    // Get current default agent
-    const agent = await this.agentRepo.findDefault();
+    // Get the specified agent
+    const agent = await this.agentRepo.findByKey(agentKey);
     if (!agent) {
-      throw new Error('No default agent found');
+      throw new Error(`Agent '${agentKey}' not found`);
     }
 
     // Get test dataset

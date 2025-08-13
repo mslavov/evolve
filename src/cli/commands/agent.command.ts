@@ -10,9 +10,10 @@ export function createAgentCommand() {
   command
     .description('Manage agents (scorers, evaluators, optimizers)')
     .addCommand(createListCommand())
-    .addCommand(createSetCommand())
-    .addCommand(createGetCommand())
-    .addCommand(createDefaultCommand())
+    .addCommand(createCreateCommand())
+    .addCommand(createShowCommand())
+    .addCommand(createUpdateCommand())
+    .addCommand(createDeleteCommand())
     .addCommand(createCloneCommand());
   
   return command;
@@ -40,11 +41,10 @@ function createListCommand() {
         console.log(chalk.cyan('\n🤖 Agents:\n'));
         
         for (const agent of agents) {
-          const defaultMark = agent.isDefault ? chalk.green(' [DEFAULT]') : '';
           const activeMark = agent.isActive ? '' : chalk.red(' [INACTIVE]');
           const systemMark = agent.isSystemAgent ? chalk.blue(' [SYSTEM]') : '';
           
-          console.log(chalk.bold(`${agent.key}${defaultMark}${activeMark}${systemMark}`));
+          console.log(chalk.bold(`${agent.key}${activeMark}${systemMark}`));
           console.log(`  Name: ${agent.name}`);
           console.log(`  Type: ${chalk.magenta(agent.type)}`);
           console.log(`  Model: ${agent.model}`);
@@ -73,9 +73,9 @@ function createListCommand() {
     });
 }
 
-function createSetCommand() {
-  return new Command('set')
-    .description('Create or update an agent')
+function createCreateCommand() {
+  return new Command('create')
+    .description('Create a new agent')
     .argument('<key>', 'Agent key')
     .option('-n, --name <name>', 'Agent display name')
     .option('--type <type>', 'Agent type (scorer, evaluator, optimizer, researcher, generator)', 'scorer')
@@ -88,7 +88,6 @@ function createSetCommand() {
     .option('--max-tokens <n>', 'Maximum tokens', parseInt)
     .option('--output-type <type>', 'Output type: structured or text', 'structured')
     .option('--schema-file <path>', 'Path to JSON file containing custom output schema')
-    .option('--default', 'Set as default agent', false)
     .action(async (key, options) => {
       const spinner = ora('Saving agent...').start();
       
@@ -132,7 +131,6 @@ function createSetCommand() {
               outputType: options.outputType,
               outputSchema,
               description: options.description,
-              isDefault: false,
             }
           );
         } else if (options.promptId) {
@@ -152,10 +150,6 @@ function createSetCommand() {
           throw new Error('Either --prompt, --prompt-file, or --prompt-id is required');
         }
         
-        if (options.default) {
-          await agentService.setDefaultAgent(key);
-        }
-        
         spinner.succeed('Agent saved successfully!');
         console.log(chalk.gray(`Key: ${agent.key}`));
         console.log(chalk.gray(`Name: ${agent.name}`));
@@ -168,9 +162,9 @@ function createSetCommand() {
     });
 }
 
-function createGetCommand() {
-  return new Command('get')
-    .description('Get a specific agent')
+function createShowCommand() {
+  return new Command('show')
+    .description('Show details of a specific agent')
     .argument('<key>', 'Agent key')
     .action(async (key) => {
       const spinner = ora('Loading agent...').start();
@@ -197,7 +191,6 @@ function createGetCommand() {
           temperature: agent.temperature,
           promptId: agent.promptId,
           maxTokens: agent.maxTokens,
-          isDefault: agent.isDefault,
           isActive: agent.isActive,
           isSystemAgent: agent.isSystemAgent,
           averageScore: agent.averageScore,
@@ -211,22 +204,101 @@ function createGetCommand() {
     });
 }
 
-function createDefaultCommand() {
-  return new Command('default')
-    .description('Set the default agent')
-    .argument('<key>', 'Agent key to set as default')
-    .action(async (key) => {
-      const spinner = ora('Setting default agent...').start();
+function createUpdateCommand() {
+  return new Command('update')
+    .description('Update an existing agent')
+    .argument('<key>', 'Agent key to update')
+    .option('-n, --name <name>', 'Agent display name')
+    .option('-d, --description <desc>', 'Agent description')
+    .option('-m, --model <model>', 'Model to use')
+    .option('-t, --temperature <temp>', 'Temperature setting', parseFloat)
+    .option('--max-tokens <n>', 'Maximum tokens', parseInt)
+    .option('--active', 'Set agent as active')
+    .option('--inactive', 'Set agent as inactive')
+    .action(async (key, options) => {
+      const spinner = ora('Updating agent...').start();
       
       try {
         const db = getDatabase();
         const agentService = new AgentService(db);
         
-        await agentService.setDefaultAgent(key);
+        const agent = await agentService.getAgent(key);
+        if (!agent) {
+          throw new Error(`Agent '${key}' not found`);
+        }
         
-        spinner.succeed(`Agent "${key}" set as default`);
+        const updates: any = {};
+        if (options.name) updates.name = options.name;
+        if (options.description) updates.description = options.description;
+        if (options.model) updates.model = options.model;
+        if (options.temperature !== undefined) updates.temperature = options.temperature;
+        if (options.maxTokens) updates.maxTokens = options.maxTokens;
+        if (options.active) updates.isActive = true;
+        if (options.inactive) updates.isActive = false;
+        
+        const updated = await agentService.saveAgent(key, updates);
+        
+        spinner.succeed(`Agent "${key}" updated successfully`);
+        console.log(chalk.gray(`Name: ${updated.name}`));
+        console.log(chalk.gray(`Model: ${updated.model}`));
+        console.log(chalk.gray(`Temperature: ${updated.temperature}`));
       } catch (error) {
-        spinner.fail('Failed to set default agent');
+        spinner.fail('Failed to update agent');
+        console.error(chalk.red('Error:'), error);
+        process.exit(1);
+      }
+    });
+}
+
+function createDeleteCommand() {
+  return new Command('delete')
+    .description('Delete an agent')
+    .argument('<key>', 'Agent key to delete')
+    .option('--force', 'Skip confirmation')
+    .action(async (key, options) => {
+      const spinner = ora('Deleting agent...').start();
+      
+      try {
+        const db = getDatabase();
+        const agentService = new AgentService(db);
+        
+        const agent = await agentService.getAgent(key);
+        if (!agent) {
+          throw new Error(`Agent '${key}' not found`);
+        }
+        
+        if (agent.isSystemAgent) {
+          throw new Error('Cannot delete system agents');
+        }
+        
+        if (!options.force) {
+          spinner.stop();
+          console.log(chalk.yellow(`\nAbout to delete agent: ${agent.name} (${key})`));
+          console.log(chalk.gray('This action cannot be undone.'));
+          
+          const readline = await import('readline');
+          const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+          });
+          
+          const answer = await new Promise<string>(resolve => {
+            rl.question(chalk.cyan('Are you sure? (y/N) '), resolve);
+          });
+          rl.close();
+          
+          if (answer.toLowerCase() !== 'y') {
+            console.log('Deletion cancelled');
+            process.exit(0);
+          }
+          spinner.start('Deleting agent...');
+        }
+        
+        await agentService.deleteAgent(key);
+        
+        spinner.succeed(`Agent "${key}" deleted successfully`);
+      } catch (error) {
+        spinner.fail('Failed to delete agent');
         console.error(chalk.red('Error:'), error);
         process.exit(1);
       }

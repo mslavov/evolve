@@ -15,12 +15,14 @@ async function testAgents() {
   
   // Service now uses lazy initialization - no need to call initialize()
   
-  // Test 1: Default scorer agent
-  console.log('1️⃣ Testing default scorer agent:');
+  // Test 1: Scorer agent (must specify agent key)
+  console.log('1️⃣ Testing scorer agent:');
   try {
-    const result1 = await agentService.run('This is a helpful technical tutorial about Node.js async/await patterns.');
+    const result1 = await agentService.run('This is a helpful technical tutorial about Node.js async/await patterns.', {
+      agentKey: 'content_scorer'
+    });
     console.log('   ✅ Score:', result1.output.score);
-    console.log('   Agent:', result1.metadata.agentKey || 'default');
+    console.log('   Agent:', result1.metadata.agentKey);
     console.log('   Type:', result1.metadata.agentType);
   } catch (error) {
     console.error('   ❌ Error:', error.message);
@@ -44,8 +46,10 @@ async function testAgents() {
   // Test 3: Agent chain (agent calling agent)
   console.log('\n3️⃣ Testing agent chain (scorer → researcher):');
   try {
-    // First run scorer
-    const scoreResult = await agentService.run('A basic hello world example in Python.');
+    // First run scorer (with explicit agent key)
+    const scoreResult = await agentService.run('A basic hello world example in Python.', {
+      agentKey: 'content_scorer'
+    });
     console.log('   Score result:', scoreResult.output.score);
     
     // Then use researcher to analyze the result

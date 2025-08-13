@@ -32,7 +32,6 @@ export const agents = sqliteTable('agents', {
   metadata: text('metadata', { mode: 'json' }).$type<Record<string, any>>(),
   
   // Status flags
-  isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
   isSystemAgent: integer('is_system_agent', { mode: 'boolean' }).notNull().default(false),
   
@@ -43,7 +42,6 @@ export const agents = sqliteTable('agents', {
   keyIdx: uniqueIndex('agent_key_idx').on(table.key),
   typeIdx: index('agent_type_idx').on(table.type),
   systemIdx: index('agent_system_idx').on(table.isSystemAgent),
-  defaultIdx: index('agent_default_idx').on(table.isDefault),
   activeIdx: index('agent_active_idx').on(table.isActive),
 }));
 

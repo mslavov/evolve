@@ -100,20 +100,18 @@ pnpm cli agent set myagent \
   --temperature 0.7 \
   --prompt "Your custom prompt here"
 
-# Set as default agent
-pnpm cli agent default myagent
 ```
 
 #### 2. Run Your Agent
 ```bash
-# Run with text input
-pnpm cli run "Your content to process"
+# Run with text input (agent required)
+pnpm cli run "Your content to process" --agent myagent
 
 # Or with JSON input
-pnpm cli run --input-file input.json
+pnpm cli run --input-file input.json --agent myagent
 
 # Save output for assessment
-pnpm cli run "Your content" --output-file results.json
+pnpm cli run "Your content" --agent myagent --output-file results.json
 ```
 
 #### 3. Assess & Build Dataset
@@ -255,7 +253,7 @@ pnpm dataset export -o dataset.json
 pnpm cli agent list
 
 # Create new agent with inline prompt
-pnpm cli agent set myagent \
+pnpm cli agent create myagent \
   --name "My Agent" \
   --type scorer \
   --model gpt-4o \
@@ -263,18 +261,22 @@ pnpm cli agent set myagent \
   --prompt "Your evaluation prompt here"
 
 # Create agent with prompt from file
-pnpm cli agent set myagent \
+pnpm cli agent create myagent \
   --name "My Agent" \
   --type scorer \
   --model gpt-4o \
   --temperature 0.3 \
   --prompt-file prompts/my-prompt.txt
 
-# Set as default agent
-pnpm cli agent default myagent
 
 # View agent details
 pnpm cli agent show myagent
+
+# Update existing agent
+pnpm cli agent update myagent --temperature 0.5
+
+# Delete agent
+pnpm cli agent delete myagent
 ```
 
 ### Optimization

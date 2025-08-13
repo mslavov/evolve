@@ -73,7 +73,7 @@ You are an interactive code review assistant helping a human reviewer understand
    - If human wants to skip → Move to next area
 
 4. **Review File Updates**
-   After each human review input, append to the review file:
+   After each human review input, append to the review file in `tmp/code-review-session-[date].md`:
    
    ```markdown
    ## Component: [Component Name]
@@ -139,7 +139,7 @@ Start with high-level information and drill down based on human interest:
 
 ### 8. Review File Structure
 
-The generated review file should be organized as:
+The generated review file should be saved to `tmp/code-review-session-[YYYY-MM-DD].md` and organized as:
 
 ```markdown
 # Interactive Code Review Session

@@ -154,15 +154,22 @@ CREATE TABLE `eval_datasets` (
 	`corrected_score` real,
 	`verdict` text NOT NULL,
 	`dataset_type` text DEFAULT 'evaluation' NOT NULL,
+	`dataset_version` text,
 	`metadata` text,
+	`deleted_at` integer,
+	`archived` integer DEFAULT false NOT NULL,
 	`created_at` integer NOT NULL,
-	FOREIGN KEY (`run_id`) REFERENCES `runs`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`assessment_id`) REFERENCES `assessments`(`id`) ON UPDATE no action ON DELETE cascade
+	`updated_at` integer NOT NULL,
+	FOREIGN KEY (`run_id`) REFERENCES `runs`(`id`) ON UPDATE no action ON DELETE restrict,
+	FOREIGN KEY (`assessment_id`) REFERENCES `assessments`(`id`) ON UPDATE no action ON DELETE restrict
 );
 --> statement-breakpoint
 CREATE INDEX `eval_dataset_type_idx` ON `eval_datasets` (`dataset_type`);--> statement-breakpoint
 CREATE INDEX `eval_run_idx` ON `eval_datasets` (`run_id`);--> statement-breakpoint
 CREATE INDEX `eval_assessment_idx` ON `eval_datasets` (`assessment_id`);--> statement-breakpoint
+CREATE INDEX `eval_dataset_version_idx` ON `eval_datasets` (`dataset_version`);--> statement-breakpoint
+CREATE INDEX `eval_dataset_deleted_idx` ON `eval_datasets` (`deleted_at`);--> statement-breakpoint
+CREATE UNIQUE INDEX `eval_dataset_unique_idx` ON `eval_datasets` (`run_id`, `assessment_id`, `dataset_version`);--> statement-breakpoint
 
 -- Insert system agent prompts
 INSERT INTO prompts (id, version, name, description, template, is_active, is_production, metadata, created_at, updated_at)

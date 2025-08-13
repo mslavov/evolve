@@ -184,4 +184,79 @@ export class AssessmentRepository extends BaseRepository {
 
     return result.count > 0;
   }
+
+  /**
+   * Batch fetch assessments for multiple runs
+   * Returns a Map for efficient lookup
+   */
+  async findByRunIds(runIds: string[]): Promise<Map<string, Assessment[]>> {
+    if (runIds.length === 0) {
+      return new Map();
+    }
+
+    const results = await this.db
+      .select()
+      .from(assessments)
+      .where(inArray(assessments.runId, runIds))
+      .orderBy(desc(assessments.timestamp));
+
+    // Group assessments by runId
+    const assessmentsByRun = new Map<string, Assessment[]>();
+    for (const assessment of results) {
+      const runAssessments = assessmentsByRun.get(assessment.runId) || [];
+      runAssessments.push(assessment);
+      assessmentsByRun.set(assessment.runId, runAssessments);
+    }
+
+    return assessmentsByRun;
+  }
+
+  /**
+   * Get assessments with pagination support
+   */
+  async findPaginated(options: {
+    filters?: AssessmentFilters;
+    cursor?: string;
+    limit?: number;
+  }): Promise<{
+    data: Assessment[];
+    nextCursor?: string;
+    hasMore: boolean;
+  }> {
+    const limit = options.limit || 20;
+    const conditions = [];
+
+    // Apply filters
+    if (options.filters?.runId) {
+      conditions.push(eq(assessments.runId, options.filters.runId));
+    }
+    if (options.filters?.verdict) {
+      conditions.push(eq(assessments.verdict, options.filters.verdict));
+    }
+    if (options.filters?.minConfidence !== undefined) {
+      conditions.push(gte(assessments.confidence, options.filters.minConfidence));
+    }
+
+    // Apply cursor for pagination
+    if (options.cursor) {
+      conditions.push(lte(assessments.id, options.cursor));
+    }
+
+    const query = this.db
+      .select()
+      .from(assessments)
+      .orderBy(desc(assessments.id))
+      .limit(limit + 1); // Fetch one extra to check if there's more
+
+    if (conditions.length > 0) {
+      query.where(and(...conditions));
+    }
+
+    const results = await query;
+    const hasMore = results.length > limit;
+    const data = hasMore ? results.slice(0, -1) : results;
+    const nextCursor = hasMore ? data[data.length - 1].id : undefined;
+
+    return { data, nextCursor, hasMore };
+  }
 }

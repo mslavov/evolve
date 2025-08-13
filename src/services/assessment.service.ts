@@ -5,6 +5,16 @@ import { EvalDatasetRepository } from '../repositories/eval-dataset.repository.j
 import type { Run } from '../db/schema/runs.js';
 import type { Assessment, NewAssessment } from '../db/schema/assessments.js';
 import type { EvalDataset, NewEvalDataset } from '../db/schema/eval-datasets.js';
+import { getDatasetConfig } from '../config/dataset.config.js';
+import {
+  extractScoreFromOutput,
+  determineExpectedOutput,
+  generateDatasetVersion,
+  determineDatasetSplit,
+  determineQuality,
+  generateDatasetTags,
+  formatOutputForDataset,
+} from '../utils/data-extraction.js';
 
 export interface AddAssessmentParams {
   runId: string;
@@ -65,10 +75,17 @@ export class AssessmentService {
     
     const assessment = await this.assessmentRepo.create(assessmentData);
     
-    // Automatically add to eval dataset if assessment is high confidence
-    if (params.confidence && params.confidence >= 0.8) {
+    // Check configuration for auto-create
+    const config = getDatasetConfig();
+    
+    // Automatically add to eval dataset if configured and high confidence
+    if (config.autoCreate.enabled && 
+        params.confidence && 
+        params.confidence >= config.autoCreate.confidenceThreshold) {
+      const quality = determineQuality(params.confidence, config.qualityThresholds);
       await this.addToDataset(run, assessment, {
-        quality: params.confidence >= 0.9 ? 'high' : 'medium',
+        quality,
+        version: generateDatasetVersion('auto'),
       });
     }
     
@@ -83,77 +100,99 @@ export class AssessmentService {
   }
   
   /**
-   * Build eval dataset from assessed runs
+   * Build eval dataset from assessed runs (optimized)
    */
   async buildDataset(params: BuildDatasetParams = {}): Promise<{
     added: number;
     filtered: number;
     version: string;
   }> {
-    // Get all runs and filter for those with assessments
+    const config = getDatasetConfig();
+    const version = params.version || generateDatasetVersion();
+    
+    // Get all runs efficiently
     const allRuns = await this.runRepo.findMany({});
-    const runs = [];
-    
-    // Filter runs that have assessments
-    for (const run of allRuns) {
-      const assessments = await this.assessmentRepo.findByRunId(run.id);
-      if (assessments.length > 0) {
-        runs.push(run);
-      }
+    if (allRuns.length === 0) {
+      return { added: 0, filtered: 0, version };
     }
     
-    const version = params.version || `v${Date.now()}`;
+    // Batch fetch all assessments at once
+    const runIds = allRuns.map(r => r.id);
+    const assessmentsByRun = await this.assessmentRepo.findByRunIds(runIds);
+    
+    // Filter runs with assessments
+    const runsWithAssessments = allRuns.filter(run => 
+      assessmentsByRun.has(run.id) && assessmentsByRun.get(run.id)!.length > 0
+    );
+    
     let added = 0;
-    let filtered = 0; // Count of runs filtered out (no assessments, low confidence, or sampling)
+    let filtered = 0;
+    const batchSize = config.performance.batchSize;
     
-    for (const run of runs) {
-      // Get assessments for this run (we know it has assessments from filtering above)
-      const assessments = await this.assessmentRepo.findByRunId(run.id);
+    // Process in batches to manage memory
+    for (let i = 0; i < runsWithAssessments.length; i += batchSize) {
+      const batch = runsWithAssessments.slice(i, i + batchSize);
+      const datasetEntries: NewEvalDataset[] = [];
       
-      if (assessments.length === 0) {
-        filtered++;
-        continue;
-      }
-      
-      // Filter by confidence if specified
-      let validAssessments = assessments;
-      if (params.minConfidence) {
-        validAssessments = assessments.filter(
-          a => a.confidence && a.confidence >= params.minConfidence!
-        );
-      }
-      
-      if (validAssessments.length === 0) {
-        filtered++;
-        continue;
-      }
-      
-      // Apply sampling rate
-      if (params.samplingRate && Math.random() > params.samplingRate) {
-        filtered++;
-        continue;
-      }
-      
-      // Use the most recent or highest confidence assessment
-      const assessment = validAssessments.sort((a, b) => {
-        if (a.confidence && b.confidence) {
-          return b.confidence - a.confidence;
+      for (const run of batch) {
+        const assessments = assessmentsByRun.get(run.id) || [];
+        
+        // Filter by confidence if specified
+        let validAssessments = assessments;
+        if (params.minConfidence) {
+          validAssessments = assessments.filter(
+            a => a.confidence && a.confidence >= params.minConfidence!
+          );
         }
-        return b.timestamp.getTime() - a.timestamp.getTime();
-      })[0];
+        
+        if (validAssessments.length === 0) {
+          filtered++;
+          continue;
+        }
+        
+        // Apply sampling rate
+        const samplingRate = params.samplingRate ?? config.defaults.samplingRate;
+        if (samplingRate < 1 && Math.random() > samplingRate) {
+          filtered++;
+          continue;
+        }
+        
+        // Use the most recent or highest confidence assessment
+        const assessment = validAssessments.sort((a, b) => {
+          if (a.confidence && b.confidence) {
+            return b.confidence - a.confidence;
+          }
+          return b.timestamp.getTime() - a.timestamp.getTime();
+        })[0];
+        
+        // Prepare dataset entry
+        const quality = params.quality || determineQuality(
+          assessment.confidence,
+          config.qualityThresholds
+        );
+        
+        const split = params.split || determineDatasetSplit(
+          config.defaults.splitRatios
+        );
+        
+        const datasetEntry = this.prepareDatasetEntry(run, assessment, {
+          version,
+          split,
+          quality,
+          source: params.source || 'assessment',
+        });
+        
+        datasetEntries.push(datasetEntry);
+      }
       
-      // Add to dataset
-      await this.addToDataset(run, assessment, {
-        version,
-        split: params.split,
-        quality: params.quality || this.determineQuality(assessment),
-        source: params.source || 'assessment',
-      });
-      
-      added++;
+      // Batch insert/upsert dataset entries
+      for (const entry of datasetEntries) {
+        await this.evalDatasetRepo.upsert(entry);
+        added++;
+      }
     }
     
-    return { added, filtered, version };
+    return { added, filtered: allRuns.length - runsWithAssessments.length + filtered, version };
   }
   
   /**
@@ -219,86 +258,60 @@ export class AssessmentService {
       source?: 'assessment' | 'human' | 'consensus';
     }
   ): Promise<void> {
-    // Extract score from output if it's structured
-    let outputScore = 0;
-    if (typeof run.output === 'object' && run.output.score !== undefined) {
-      outputScore = run.output.score;
-    }
+    const config = getDatasetConfig();
+    const datasetEntry = this.prepareDatasetEntry(run, assessment, {
+      version: options.version || generateDatasetVersion(),
+      split: options.split || determineDatasetSplit(config.defaults.splitRatios),
+      quality: options.quality || determineQuality(
+        assessment.confidence,
+        config.qualityThresholds
+      ),
+      source: options.source || 'assessment',
+    });
     
-    const datasetRecord: NewEvalDataset = {
+    // Use upsert to prevent duplicates
+    await this.evalDatasetRepo.upsert(datasetEntry);
+  }
+  
+  /**
+   * Prepare a dataset entry from run and assessment
+   */
+  private prepareDatasetEntry(
+    run: Run,
+    assessment: Assessment,
+    options: {
+      version: string;
+      split: 'train' | 'validation' | 'test';
+      quality: 'high' | 'medium' | 'low';
+      source: 'assessment' | 'human' | 'consensus';
+    }
+  ): NewEvalDataset {
+    const tags = generateDatasetTags(run, assessment);
+    
+    return {
       runId: run.id,
       assessmentId: assessment.id,
       input: run.input,
-      expectedOutput: run.expectedOutput || JSON.stringify(run.output),
-      agentOutput: JSON.stringify(run.output),
+      expectedOutput: determineExpectedOutput(run),
+      agentOutput: formatOutputForDataset(run.output),
       correctedScore: assessment.verdict === 'correct' 
         ? undefined 
         : assessment.correctedScore,
       verdict: assessment.verdict,
       datasetType: 'evaluation',
+      datasetVersion: options.version,
       metadata: {
-        source: options.source || 'assessment',
+        source: options.source,
         quality: options.quality,
-        split: options.split || 'train',
-        version: options.version,
+        split: options.split,
         reasoning: assessment.reasoning,
         confidence: assessment.confidence,
         agentId: run.agentId,
+        tags,
       },
+      updatedAt: new Date(),
     };
-    
-    await this.evalDatasetRepo.create(datasetRecord);
   }
   
-  /**
-   * Determine the quality of an assessment
-   */
-  private determineQuality(assessment: Assessment): 'high' | 'medium' | 'low' {
-    if (!assessment.confidence) return 'medium';
-    if (assessment.confidence >= 0.9) return 'high';
-    if (assessment.confidence >= 0.7) return 'medium';
-    return 'low';
-  }
-  
-  /**
-   * Determine dataset split (train/validation/test)
-   */
-  private determineSplit(): 'train' | 'validation' | 'test' {
-    const rand = Math.random();
-    if (rand < 0.7) return 'train';
-    if (rand < 0.85) return 'validation';
-    return 'test';
-  }
-  
-  /**
-   * Generate tags for a dataset record
-   */
-  private generateTags(run: Run, assessment: Assessment): string[] {
-    const tags: string[] = [];
-    
-    // Add model tag
-    tags.push(`model:${run.configModel}`);
-    
-    // Add verdict tag
-    tags.push(`verdict:${assessment.verdict}`);
-    
-    // Add assessor tag
-    tags.push(`assessor:${assessment.assessedBy}`);
-    
-    // Add content type tag
-    if (run.metadata.inputType) {
-      tags.push(`type:${run.metadata.inputType}`);
-    }
-    
-    // Add score range tag
-    const score = assessment.verdict === 'correct' 
-      ? run.outputScore 
-      : (assessment.correctedScore || run.outputScore);
-    
-    if (score >= 0.8) tags.push('high-score');
-    else if (score >= 0.5) tags.push('medium-score');
-    else tags.push('low-score');
-    
-    return tags;
-  }
+  // Removed deprecated private methods - now using utility functions
 }

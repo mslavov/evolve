@@ -24,20 +24,28 @@ node dist/cli/index.js [command]
 
 ## Commands
 
-### `score [content]`
+### `run [content]`
 
-Score content usefulness on a 0-1 scale.
+Run an agent with given input (text or structured data).
 
 **Usage:**
 ```bash
-pnpm score "Your content here"
-pnpm score -- -f content.txt
-pnpm score -- -g "Content with ground truth"
+pnpm cli run "Your content here"
+pnpm cli run --input-file input.json
+pnpm cli run "Content" --output-file results.json
 ```
 
 **Options:**
-- `-g, --ground-truth` - Collect ground truth label after scoring
-- `-f, --file <path>` - Read content from file instead of inline
+- `-a, --agent <key>` - Agent key to use
+- `-c, --config <key>` - Configuration key (deprecated, use --agent)
+- `-i, --input-file <path>` - Path to JSON file containing structured input
+- `-o, --output-file <path>` - Path to save output as JSON
+- `--collect` - Collect this run for assessment
+- `--verbose` - Show detailed output
+
+### `score [content]` (Deprecated)
+
+Alias for `run` command. Use `run` instead.
 
 **Output:**
 - Numerical score (0-1)
@@ -47,7 +55,7 @@ pnpm score -- -g "Content with ground truth"
 
 **Example:**
 ```bash
-$ pnpm score "How to implement OAuth2 in Node.js"
+$ pnpm cli run "How to implement OAuth2 in Node.js"
 
 ═══════════════════════════════
    USEFULNESS SCORE
@@ -63,6 +71,36 @@ Dimensions:
   actionability: ███████░░░ 0.70
 
 Model: gpt-4o-mini | Temp: 0.3
+```
+
+**JSON Input Format:**
+```json
+{
+  "content": "Main input text or structured data",
+  "metadata": {
+    "source": "user",
+    "timestamp": "2024-01-01T00:00:00Z"
+  },
+  "context": {
+    "previousScore": 0.8,
+    "category": "technical"
+  }
+}
+```
+
+**Example with JSON:**
+```bash
+# Create input file
+echo '{
+  "content": "How to implement OAuth2?",
+  "metadata": {"source": "stackoverflow"}
+}' > input.json
+
+# Run with JSON input
+$ pnpm cli run --input-file input.json --output-file result.json
+
+# Check output
+$ cat result.json
 ```
 
 ### `evaluate`
@@ -260,19 +298,19 @@ The CLI provides detailed error messages:
 
 ### Basic Scoring
 ```bash
-pnpm score "What is the capital of France?"
+pnpm cli run "What is the capital of France?"
 # Output: Score: 0.15 (trivial, widely known)
 ```
 
 ### File-based Scoring
 ```bash
 echo "Complete guide to React hooks" > content.txt
-pnpm score -- -f content.txt
+pnpm cli run -- -f content.txt
 ```
 
 ### Ground Truth Collection
 ```bash
-pnpm score -- -g "Advanced TypeScript patterns"
+pnpm cli run -- -g "Advanced TypeScript patterns"
 # Prompts for human evaluation after AI scoring
 ```
 

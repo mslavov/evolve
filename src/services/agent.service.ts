@@ -1,17 +1,21 @@
 import { Database } from '../db/client.js';
 import { RunRepository } from '../repositories/run.repository.js';
+import { AgentRepository } from '../repositories/agent.repository.js';
 import { ConfigRepository } from '../repositories/config.repository.js';
 import { PromptService } from './prompt.service.js';
 import { scoringSchema } from '../types/index.js';
 import { providerFactory, type LLMProvider, type LLMMessage } from '../providers/index.js';
 import { schemaRegistry } from './schema-registry.service.js';
 import { z } from 'zod';
+import type { Agent, NewAgent } from '../db/schema/agents.js';
 import type { Config, NewConfig } from '../db/schema/configs.js';
 import type { Run, NewRun } from '../db/schema/runs.js';
 import type { Prompt } from '../db/schema/prompts.js';
 
 export interface RunOptions {
-  configKey?: string;
+  configKey?: string; // Backward compatibility
+  agentKey?: string; // New preferred option
+  parentRunId?: string; // For tracking agent chains
 }
 
 export interface RunResult {
@@ -22,52 +26,90 @@ export interface RunResult {
 
 export class AgentService {
   private runRepo: RunRepository;
-  private configRepo: ConfigRepository;
+  private agentRepo: AgentRepository;
+  private configRepo: ConfigRepository; // Keep for backward compatibility
   private promptService: PromptService;
-  private currentConfig: Config | null = null;
+  private currentAgent: Agent | null = null;
   private currentPrompt: Prompt | null = null;
   private provider: LLMProvider | null = null;
+  private initialized: Promise<void> | null = null;
   
   constructor(db: Database) {
     this.runRepo = new RunRepository(db);
+    this.agentRepo = new AgentRepository(db);
     this.configRepo = new ConfigRepository(db);
     this.promptService = new PromptService(db);
   }
   
   /**
-   * Initialize the agent service
+   * Ensure the service is initialized (lazy initialization)
    */
-  async initialize(): Promise<void> {
-    // Load default configuration
-    this.currentConfig = await this.configRepo.findDefault();
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      this.initialized = this.doInitialize();
+    }
+    await this.initialized;
+  }
+  
+  
+  /**
+   * Perform actual initialization
+   */
+  private async doInitialize(): Promise<void> {
+    // Try to load default agent first
+    this.currentAgent = await this.agentRepo.findDefault();
     
-    if (!this.currentConfig) {
-      // Try to find any existing config first
-      const configs = await this.configRepo.findMany({ isActive: true });
-      if (configs.length > 0) {
-        this.currentConfig = configs[0];
+    if (!this.currentAgent) {
+      // Try to find any active agent
+      const agents = await this.agentRepo.findActive();
+      if (agents.length > 0) {
+        this.currentAgent = agents[0];
       } else {
-        // Get the production prompt or default to v1
-        const prodPrompt = await this.promptService.getBestPrompt();
-        const promptId = prodPrompt?.id || 'v1';
-        
-        // Create a default configuration if none exists
-        this.currentConfig = await this.configRepo.create({
-          key: 'default',
-          model: 'gpt-4o-mini',
-          temperature: 0.3,
-          maxTokens: 500,
-          promptId: promptId,
-          isDefault: true,
-        });
+        // Fallback: try to migrate from configs if no agents exist
+        const defaultConfig = await this.configRepo.findDefault();
+        if (defaultConfig) {
+          // Create agent from config
+          this.currentAgent = await this.agentRepo.create({
+            key: defaultConfig.key,
+            name: defaultConfig.description || `Agent: ${defaultConfig.key}`,
+            type: 'scorer',
+            model: defaultConfig.model,
+            temperature: defaultConfig.temperature,
+            maxTokens: defaultConfig.maxTokens || undefined,
+            promptId: defaultConfig.promptId,
+            outputType: defaultConfig.outputType || 'structured',
+            outputSchema: defaultConfig.outputSchema,
+            schemaVersion: defaultConfig.schemaVersion || undefined,
+            isDefault: defaultConfig.isDefault,
+            isActive: defaultConfig.isActive,
+            isSystemAgent: false,
+          });
+        } else {
+          // Create a default scorer agent if nothing exists
+          const prodPrompt = await this.promptService.getBestPrompt();
+          const promptId = prodPrompt?.id || 'v1';
+          
+          this.currentAgent = await this.agentRepo.create({
+            key: 'default_scorer',
+            name: 'Default Scorer Agent',
+            type: 'scorer',
+            model: 'gpt-4o-mini',
+            temperature: 0.3,
+            maxTokens: 500,
+            promptId: promptId,
+            isDefault: true,
+            isSystemAgent: false,
+          });
+        }
       }
     }
     
     // Load the prompt
-    this.currentPrompt = await this.promptService.getPrompt(this.currentConfig.promptId);
-    
-    // Initialize provider based on model
-    this.provider = providerFactory.createProvider(this.currentConfig.model);
+    if (this.currentAgent) {
+      this.currentPrompt = await this.promptService.getPrompt(this.currentAgent.promptId);
+      // Initialize provider based on model
+      this.provider = providerFactory.createProvider(this.currentAgent.model);
+    }
   }
   
   /**
@@ -77,22 +119,52 @@ export class AgentService {
     input: string | Record<string, any>,
     options?: RunOptions
   ): Promise<RunResult> {
-    // Ensure we're initialized
-    if (!this.provider || !this.currentConfig) {
-      await this.initialize();
-    }
+    // Ensure we're initialized (lazy initialization)
+    await this.ensureInitialized();
     
-    if (!this.provider || !this.currentConfig) {
+    if (!this.provider || !this.currentAgent) {
       throw new Error('Failed to initialize agent service');
     }
     
-    // Load specific config if requested
-    if (options?.configKey && options.configKey !== this.currentConfig.key) {
-      const config = await this.configRepo.findByKey(options.configKey);
-      if (config) {
-        this.currentConfig = config;
-        this.currentPrompt = await this.promptService.getPrompt(config.promptId);
-        this.provider = providerFactory.createProvider(config.model);
+    // Determine which agent to use
+    const agentKey = options?.agentKey || options?.configKey; // Support both for backward compatibility
+    
+    // Load specific agent if requested
+    if (agentKey && agentKey !== this.currentAgent.key) {
+      // Try to load as agent first
+      let agent = await this.agentRepo.findByKey(agentKey);
+      
+      // Fallback: try to load as config and convert to agent
+      if (!agent) {
+        const config = await this.configRepo.findByKey(agentKey);
+        if (config) {
+          // Create or find agent from config
+          agent = await this.agentRepo.findByKey(config.key);
+          if (!agent) {
+            // Create agent from config on the fly
+            agent = await this.agentRepo.create({
+              key: config.key,
+              name: config.description || `Agent: ${config.key}`,
+              type: 'scorer',
+              model: config.model,
+              temperature: config.temperature,
+              maxTokens: config.maxTokens || undefined,
+              promptId: config.promptId,
+              outputType: config.outputType || 'structured',
+              outputSchema: config.outputSchema,
+              schemaVersion: config.schemaVersion || undefined,
+              isDefault: config.isDefault,
+              isActive: config.isActive,
+              isSystemAgent: false,
+            });
+          }
+        }
+      }
+      
+      if (agent) {
+        this.currentAgent = agent;
+        this.currentPrompt = await this.promptService.getPrompt(agent.promptId);
+        this.provider = providerFactory.createProvider(agent.model);
       }
     }
     
@@ -100,11 +172,11 @@ export class AgentService {
     
     // Get the prompt
     if (!this.currentPrompt) {
-      this.currentPrompt = await this.promptService.getPrompt(this.currentConfig.promptId);
+      this.currentPrompt = await this.promptService.getPrompt(this.currentAgent.promptId);
     }
     
     if (!this.currentPrompt) {
-      throw new Error('Prompt not found for config');
+      throw new Error('Prompt not found for agent');
     }
     
     // Handle input formatting
@@ -136,31 +208,31 @@ export class AgentService {
     let result: any;
     let refusal: string | null | undefined = null;
     
-    if (this.currentConfig.outputSchema) {
-      // Use custom schema from config
+    if (this.currentAgent.outputSchema) {
+      // Use custom schema from agent
       try {
-        outputSchema = schemaRegistry.createFromJSON(this.currentConfig.outputSchema);
+        outputSchema = schemaRegistry.createFromJSON(this.currentAgent.outputSchema);
       } catch (error) {
         console.warn('Failed to parse custom schema, falling back to default:', error);
         outputSchema = scoringSchema;
       }
-    } else if (this.currentConfig.schemaVersion) {
+    } else if (this.currentAgent.schemaVersion) {
       // Try to get predefined schema by name/version
-      const schemaDef = schemaRegistry.get(this.currentConfig.schemaVersion);
+      const schemaDef = schemaRegistry.get(this.currentAgent.schemaVersion);
       if (schemaDef) {
         outputSchema = schemaDef.schema;
       }
     }
     
     // Call provider based on output type
-    if (this.currentConfig.outputType === 'text') {
+    if (this.currentAgent.outputType === 'text') {
       // Use text generation for unstructured output
       const response = await this.provider.generateText(
         messages,
         {
-          model: this.currentConfig.model,
-          temperature: this.currentConfig.temperature,
-          maxTokens: this.currentConfig.maxTokens || 500,
+          model: this.currentAgent.model,
+          temperature: this.currentAgent.temperature,
+          maxTokens: this.currentAgent.maxTokens || 500,
         }
       );
       
@@ -172,9 +244,9 @@ export class AgentService {
         messages,
         outputSchema,
         {
-          model: this.currentConfig.model,
-          temperature: this.currentConfig.temperature,
-          maxTokens: this.currentConfig.maxTokens || 500,
+          model: this.currentAgent.model,
+          temperature: this.currentAgent.temperature,
+          maxTokens: this.currentAgent.maxTokens || 500,
         }
       );
       
@@ -197,10 +269,12 @@ export class AgentService {
       outputScore: typeof result === 'object' && result.score !== undefined ? result.score : 0,
       outputReasoning: typeof result === 'object' ? JSON.stringify(result) : String(result),
       outputDimensions: typeof result === 'object' ? result.dimensions || result.metadata : undefined,
-      configModel: this.currentConfig.model,
-      configTemperature: this.currentConfig.temperature,
+      agentId: this.currentAgent.id,
+      parentRunId: options?.parentRunId || undefined,
+      configModel: this.currentAgent.model,
+      configTemperature: this.currentAgent.temperature,
       configPromptVersion: this.currentPrompt!.version,
-      configMaxTokens: this.currentConfig.maxTokens || undefined,
+      configMaxTokens: this.currentAgent.maxTokens || undefined,
       telemetryDuration: endTime - startTime,
       assessmentStatus: 'skipped',
     };
@@ -211,15 +285,49 @@ export class AgentService {
       output: result,
       metadata: {
         duration: endTime - startTime,
-        model: this.currentConfig.model,
+        model: this.currentAgent.model,
         promptVersion: this.currentPrompt!.version,
+        agentKey: this.currentAgent.key,
+        agentType: this.currentAgent.type,
       },
       runId: run.id,
     };
   }
   
   /**
-   * Save a configuration
+   * Save an agent (new primary method)
+   */
+  async saveAgent(key: string, agent: Partial<Omit<NewAgent, 'key' | 'id'>>): Promise<Agent> {
+    const existing = await this.agentRepo.findByKey(key);
+    
+    if (existing) {
+      // Update existing agent
+      return await this.agentRepo.update(existing.id, agent);
+    }
+    
+    // Create new agent with defaults
+    return await this.agentRepo.create({
+      key,
+      name: agent.name || `Agent: ${key}`,
+      type: agent.type || 'scorer',
+      model: agent.model || 'gpt-4o-mini',
+      temperature: agent.temperature ?? 0.3,
+      maxTokens: agent.maxTokens,
+      promptId: agent.promptId || 'v1',
+      outputType: agent.outputType || 'structured',
+      outputSchema: agent.outputSchema,
+      schemaVersion: agent.schemaVersion,
+      description: agent.description,
+      tags: agent.tags,
+      metadata: agent.metadata,
+      isDefault: agent.isDefault ?? false,
+      isActive: agent.isActive ?? true,
+      isSystemAgent: agent.isSystemAgent ?? false,
+    });
+  }
+  
+  /**
+   * Save a configuration (backward compatibility)
    */
   async saveConfig(key: string, config: Omit<NewConfig, 'key'>): Promise<Config> {
     const existing = await this.configRepo.findByKey(key);
@@ -239,22 +347,68 @@ export class AgentService {
    * Load a configuration
    */
   async loadConfig(key: string): Promise<void> {
+    await this.ensureInitialized();
     const config = await this.configRepo.findByKey(key);
     
     if (!config) {
       throw new Error(`Configuration '${key}' not found`);
     }
     
-    this.currentConfig = config;
+    this.currentAgent = await this.agentRepo.findByKey(key) || await this.agentRepo.create({
+      key: config.key,
+      name: config.description || `Agent: ${config.key}`,
+      type: 'scorer',
+      model: config.model,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens || undefined,
+      promptId: config.promptId,
+      outputType: config.outputType || 'structured',
+      outputSchema: config.outputSchema,
+      schemaVersion: config.schemaVersion || undefined,
+      isDefault: config.isDefault,
+      isActive: config.isActive,
+      isSystemAgent: false,
+    });
     this.currentPrompt = await this.promptService.getPrompt(config.promptId);
     this.provider = providerFactory.createProvider(config.model);
   }
   
   /**
-   * Get current configuration
+   * Get current agent
+   */
+  async getCurrentAgent(): Promise<Agent | null> {
+    await this.ensureInitialized();
+    return this.currentAgent;
+  }
+  
+  /**
+   * Get current configuration (backward compatibility)
    */
   getCurrentConfig(): Config | null {
-    return this.currentConfig;
+    // Convert agent to config-like structure for backward compatibility
+    if (!this.currentAgent) return null;
+    
+    return {
+      id: this.currentAgent.id,
+      key: this.currentAgent.key,
+      model: this.currentAgent.model,
+      temperature: this.currentAgent.temperature,
+      maxTokens: this.currentAgent.maxTokens || null,
+      promptId: this.currentAgent.promptId,
+      outputType: this.currentAgent.outputType || 'structured',
+      outputSchema: this.currentAgent.outputSchema,
+      schemaVersion: this.currentAgent.schemaVersion || null,
+      averageScore: this.currentAgent.averageScore,
+      evaluationCount: this.currentAgent.evaluationCount || 0,
+      lastEvaluatedAt: this.currentAgent.lastEvaluatedAt || null,
+      description: this.currentAgent.description || null,
+      tags: this.currentAgent.tags || null,
+      metadata: this.currentAgent.metadata || null,
+      isDefault: this.currentAgent.isDefault,
+      isActive: this.currentAgent.isActive,
+      createdAt: this.currentAgent.createdAt,
+      updatedAt: this.currentAgent.updatedAt,
+    } as Config;
   }
   
   /**
@@ -265,16 +419,49 @@ export class AgentService {
   }
   
   /**
-   * List all configurations
+   * List all agents (new primary method)
+   */
+  async listAgents(): Promise<Agent[]> {
+    return await this.agentRepo.findAll();
+  }
+  
+  /**
+   * List all configurations (backward compatibility)
    */
   async listConfigs(): Promise<Config[]> {
     return await this.configRepo.findAll();
   }
   
   /**
-   * Set a configuration as default
+   * Get a specific agent
+   */
+  async getAgent(key: string): Promise<Agent | null> {
+    return await this.agentRepo.findByKey(key);
+  }
+  
+  /**
+   * Set an agent as default (new primary method)
+   */
+  async setDefaultAgent(key: string): Promise<Agent> {
+    await this.ensureInitialized();
+    const agent = await this.agentRepo.findByKey(key);
+    if (!agent) {
+      throw new Error(`Agent '${key}' not found`);
+    }
+    
+    // Use repository method to set default
+    await this.agentRepo.setDefault(key);
+    
+    // Return the updated agent
+    const updated = await this.agentRepo.findByKey(key);
+    return updated!;
+  }
+  
+  /**
+   * Set a configuration as default (backward compatibility)
    */
   async setDefaultConfig(key: string): Promise<Config> {
+    await this.ensureInitialized();
     const config = await this.configRepo.findByKey(key);
     if (!config) {
       throw new Error(`Configuration '${key}' not found`);
@@ -288,30 +475,6 @@ export class AgentService {
     return updated!;
   }
   
-  /**
-   * Generate a prompt variation
-   */
-  async generatePromptVariation(basePrompt: string): Promise<string> {
-    const messages: LLMMessage[] = [
-      {
-        role: 'system',
-        content: 'You are a prompt engineer. Create a variation of the given prompt that maintains the same intent but uses different wording and structure.',
-      },
-      {
-        role: 'user',
-        content: `Create a variation of this prompt:\n\n${basePrompt}`,
-      },
-    ];
-    
-    const provider = this.provider || providerFactory.createProvider('gpt-4o-mini');
-    const response = await provider.generateText(messages, {
-      model: 'gpt-4o-mini',
-      temperature: 0.8,
-      maxTokens: 1000,
-    });
-    
-    return response.content;
-  }
   
   
   /**

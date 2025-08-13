@@ -3,10 +3,10 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { config } from 'dotenv';
-import { createScoreCommand } from './commands/score.command.js';
+import { createRunCommand } from './commands/run.command.js';
 import { createAssessCommand } from './commands/assess.command.js';
 import { createDatasetCommand } from './commands/dataset.command.js';
-import { createConfigCommand } from './commands/config.command.js';
+import { createAgentCommand } from './commands/agent.command.js';
 import { createImproveCommand } from './commands/improve.command.js';
 import { promptCommand } from './commands/prompt.command.js';
 import { migrateCommand } from './commands/migrate.command.js';
@@ -78,10 +78,10 @@ program
   .name('evolve')
   .description('Self-improving AI system with database migrations')
   .version('1.0.0')
-  .addCommand(createScoreCommand())
+  .addCommand(createRunCommand())
   .addCommand(createAssessCommand())
   .addCommand(createDatasetCommand())
-  .addCommand(createConfigCommand())
+  .addCommand(createAgentCommand())
   .addCommand(createImproveCommand())
   .addCommand(promptCommand)
   .addCommand(migrateCommand);

@@ -91,8 +91,10 @@ pnpm db:migrate
 ### Basic Usage
 
 ```bash
-# Score content
-pnpm score "Your content to score"
+# Run agent
+pnpm cli run "Your content to process"
+# Or with JSON input:
+pnpm cli run --input-file input.json
 
 # Run iterative optimization
 pnpm improve optimize baseconfig --iterations 10
@@ -178,11 +180,17 @@ Specialized agents working together:
 ### Scoring & Evaluation
 
 ```bash
-# Score content
-pnpm score "Your content"
+# Run agent
+pnpm cli run "Your content"
 
-# Score with ground truth collection
-pnpm score "Your content" --collect
+# With structured JSON input
+pnpm cli run --input-file examples/input.json
+
+# Save output to file
+pnpm cli run "Your content" --output-file results.json
+
+# Run with ground truth collection
+pnpm cli run "Your content" --collect
 
 # Evaluate current configuration
 pnpm improve evaluate
@@ -208,14 +216,17 @@ pnpm dataset export -o dataset.json
 ### Configuration Management
 
 ```bash
-# List configurations
-pnpm config list
+# List agents
+pnpm agent list
 
-# Create new config
-pnpm config set myconfig --model gpt-4o --temperature 0.3
+# Create new agent
+pnpm agent set myagent --name "My Agent" --type scorer --model gpt-4o --temperature 0.3
 
 # Set as default
-pnpm config default myconfig
+pnpm agent default myagent
+
+# Note: 'config' command still works for backward compatibility
+pnpm config list  # Alias for 'agent list'
 ```
 
 ### Optimization

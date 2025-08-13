@@ -7,7 +7,6 @@ import type {
 import { PromptService, type PromptGenerationStrategy } from '../prompt.service.js';
 import { AgentService } from '../agent.service.js';
 import { Database } from '../../db/client.js';
-import { ConfigRepository } from '../../repositories/config.repository.js';
 
 export interface OptimizationStrategy {
   type: 'prompt' | 'parameter' | 'model' | 'hybrid';
@@ -25,22 +24,14 @@ export interface ConfigVariation {
 export class OptimizationAgent {
   private promptService: PromptService;
   private agentService: AgentService;
-  private configRepo: ConfigRepository;
   private strategies: Map<string, OptimizationStrategy> = new Map();
   
-  constructor(private db: Database) {
+  constructor(db: Database) {
     this.promptService = new PromptService(db);
     this.agentService = new AgentService(db);
-    this.configRepo = new ConfigRepository(db);
     this.initializeStrategies();
   }
   
-  /**
-   * Initialize the optimization agent
-   */
-  async initialize(): Promise<void> {
-    await this.agentService.initialize();
-  }
   
   /**
    * Optimize configuration based on evaluation and research

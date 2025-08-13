@@ -31,7 +31,6 @@ function createOptimizeCommand() {
       try {
         const db = getDatabase();
         const improvementService = new ImprovementService(db);
-        await improvementService.initialize();
         
         const variations = {
           models: options.models?.split(','),
@@ -49,18 +48,18 @@ function createOptimizeCommand() {
         spinner.succeed('Optimization complete!');
         
         console.log(chalk.cyan('\n🎯 Optimization Results:\n'));
-        console.log(chalk.green('Best Configuration:'));
-        console.log(`  Key: ${result.bestConfig.key}`);
-        console.log(`  Model: ${result.bestConfig.model}`);
-        console.log(`  Temperature: ${result.bestConfig.temperature}`);
-        console.log(`  Prompt ID: ${result.bestConfig.promptId}`);
+        console.log(chalk.green('Best Agent:'));
+        console.log(`  Key: ${result.bestAgent.key}`);
+        console.log(`  Model: ${result.bestAgent.model}`);
+        console.log(`  Temperature: ${result.bestAgent.temperature}`);
+        console.log(`  Prompt ID: ${result.bestAgent.promptId}`);
         
         console.log('\n📊 Performance Comparison:');
         for (const [idx, res] of result.results.entries()) {
           const marker = idx === 0 ? chalk.green('★') : ' ';
           console.log(`${marker} Config ${idx + 1}:`);
-          console.log(`    Model: ${res.config.model}`);
-          console.log(`    Temp: ${res.config.temperature}`);
+          console.log(`    Model: ${res.agent.model}`);
+          console.log(`    Temp: ${res.agent.temperature}`);
           console.log(`    RMSE: ${chalk.yellow(res.rmse.toFixed(4))}`);
           console.log(`    Avg Score: ${res.score.toFixed(3)}`);
         }
@@ -84,7 +83,6 @@ function createEvaluateCommand() {
       try {
         const db = getDatabase();
         const improvementService = new ImprovementService(db);
-        await improvementService.initialize();
         
         const result = await improvementService.evaluateCurrentConfig();
         
@@ -131,7 +129,6 @@ function createAnalyzeCommand() {
       try {
         const db = getDatabase();
         const improvementService = new ImprovementService(db);
-        await improvementService.initialize();
         
         const analysis = await improvementService.analyzePromptPerformance({
           currentVersion: promptVersion,

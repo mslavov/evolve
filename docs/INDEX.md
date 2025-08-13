@@ -30,15 +30,18 @@ pnpm install
 cp .env.example .env
 # Add your OpenAI/Anthropic API keys
 
-# Run first scoring
-pnpm score "Your content here"
+# Run first agent
+pnpm cli run "Your content here"
+# Or with JSON input:
+pnpm cli run --input-file input.json
 
 # View dashboard
 pnpm dashboard
 ```
 
 ### Essential Commands
-- `pnpm score [content]` - Score content usefulness
+- `pnpm cli run [content]` - Run agent with input (text or JSON)
+- `pnpm cli run --input-file [path]` - Run with structured JSON input
 - `pnpm evaluate` - Evaluate performance
 - `pnpm improve` - Optimize configuration
 - `pnpm benchmark` - Run benchmark tests

@@ -213,7 +213,7 @@ pnpm lint:fix
 #### 2. Testing
 ```bash
 # Test specific functionality
-pnpm score "Test content"
+pnpm cli run "Test content"
 
 # Run benchmark
 pnpm benchmark -- -n 3

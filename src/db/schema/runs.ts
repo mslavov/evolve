@@ -1,5 +1,6 @@
 import { sqliteTable, text, real, integer } from 'drizzle-orm/sqlite-core';
 import { createId } from '@paralleldrive/cuid2';
+import { agents } from './agents.js';
 
 export const runs = sqliteTable('runs', {
   id: text('id').primaryKey().$defaultFn(() => createId()),
@@ -16,10 +17,14 @@ export const runs = sqliteTable('runs', {
   outputReasoning: text('output_reasoning').notNull(), // Can represent any text output or JSON stringified object
   outputDimensions: text('output_dimensions', { mode: 'json' }).$type<Record<string, any>>(), // Generic metadata/dimensions
   
-  // Config fields
+  // Agent fields
+  agentId: text('agent_id').references(() => agents.id),
+  parentRunId: text('parent_run_id').references(() => runs.id),
+  
+  // Config fields (kept for backward compatibility)
   configModel: text('config_model').notNull(),
   configTemperature: real('config_temperature').notNull(),
-  configPromptVersion: text('config_prompt_version').notNull(),
+  configPromptVersion: text('config_prompt_id').notNull(), // Column name in DB is config_prompt_id
   configMaxTokens: integer('config_max_tokens'),
   
   // Telemetry fields

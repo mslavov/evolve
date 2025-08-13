@@ -67,7 +67,6 @@ function createListPendingCommand() {
       try {
         const db = getDatabase();
         const agentService = new AgentService(db);
-        await agentService.initialize();
         
         const runs = await agentService.getPendingRuns(options.limit);
         

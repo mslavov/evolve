@@ -9,8 +9,6 @@ import type {
 import { EvaluationRegistry } from '../evaluation/registry.js';
 import { PatternAnalyzer } from '../evaluation/pattern-analyzer.js';
 import { FeedbackSynthesizer } from '../evaluation/feedback-synthesizer.js';
-import { AgentService } from '../agent.service.js';
-import { Database } from '../../db/client.js';
 
 export interface PredictionResult {
   data: any[];
@@ -27,23 +25,14 @@ export interface CombineStrategiesConfig {
 export class EvaluationAgent {
   private patternAnalyzer: PatternAnalyzer;
   private feedbackSynthesizer: FeedbackSynthesizer;
-  private agentService: AgentService;
   
   constructor(
-    private registry: EvaluationRegistry,
-    private db: Database
+    private registry: EvaluationRegistry
   ) {
     this.patternAnalyzer = new PatternAnalyzer();
     this.feedbackSynthesizer = new FeedbackSynthesizer(registry);
-    this.agentService = new AgentService(db);
   }
   
-  /**
-   * Initialize the evaluation agent
-   */
-  async initialize(): Promise<void> {
-    await this.agentService.initialize();
-  }
   
   /**
    * Evaluate configuration with pluggable strategies
@@ -174,16 +163,9 @@ export class EvaluationAgent {
     // 2. Run agent.score() for each test item
     // 3. Collect predictions and ground truth
     
-    const testData: any[] = []; // Load from database
+    // TODO: Implement actual prediction logic when dataset is available
     const predictions: any[] = [];
     const groundTruth: any[] = [];
-    
-    // TODO: Implement actual prediction logic
-    // for (const item of testData) {
-    //   const prediction = await this.agentService.score(item.content, config);
-    //   predictions.push(prediction);
-    //   groundTruth.push(item.expectedScore);
-    // }
     
     return {
       data: predictions,
@@ -355,7 +337,7 @@ export class EvaluationAgent {
     }
     
     // Calculate average score within majority category
-    const majorityResults = results.filter((r, i) => 
+    const majorityResults = results.filter((_, i) => 
       categories[i] === majorityCategory
     );
     const avgScore = majorityResults.reduce((sum, r) => sum + r.score, 0) / majorityResults.length;

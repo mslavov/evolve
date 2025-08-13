@@ -86,7 +86,6 @@ promptCommand
       const promptService = new PromptService(db);
       const agentService = new AgentService(db);
       
-      await agentService.initialize();
       
       const result = await promptService.testPrompt(
         version,
@@ -128,7 +127,6 @@ promptCommand
       const promptService = new PromptService(db);
       const agentService = new AgentService(db);
       
-      await agentService.initialize();
       
       const strategy: PromptGenerationStrategy = {
         type: options.strategy as any,
@@ -174,7 +172,6 @@ promptCommand
       const promptService = new PromptService(db);
       const agentService = new AgentService(db);
       
-      await agentService.initialize();
       
       const comparison = await promptService.comparePrompts(
         version1,

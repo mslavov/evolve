@@ -19,24 +19,14 @@ export class FlowOrchestrator {
   private optimizer: OptimizationAgent;
   
   constructor(
-    private db: Database,
-    private registry: EvaluationRegistry
+    db: Database,
+    registry: EvaluationRegistry
   ) {
-    this.evaluator = new EvaluationAgent(registry, db);
-    this.researcher = new ResearchAgent(db);
+    this.evaluator = new EvaluationAgent(registry);
+    this.researcher = new ResearchAgent();
     this.optimizer = new OptimizationAgent(db);
   }
   
-  /**
-   * Initialize all agents
-   */
-  async initialize(): Promise<void> {
-    await Promise.all([
-      this.evaluator.initialize(),
-      this.researcher.initialize(),
-      this.optimizer.initialize(),
-    ]);
-  }
   
   /**
    * Run the optimization flow
@@ -83,11 +73,7 @@ export class FlowOrchestrator {
         // Step 2: Research improvement strategies (if enabled)
         let researchInsights = [];
         if (params.enableResearch) {
-          researchInsights = await this.researchImprovements(
-            evaluation,
-            state,
-            config
-          );
+          researchInsights = await this.researchImprovements(evaluation);
           
           if (config?.verbose) {
             console.log(`Found ${researchInsights.length} research insights`);
@@ -98,8 +84,7 @@ export class FlowOrchestrator {
         const optimizedConfig = await this.generateOptimization(
           state,
           evaluation,
-          researchInsights,
-          config
+          researchInsights
         );
         
         if (config?.verbose) {
@@ -199,19 +184,14 @@ export class FlowOrchestrator {
       // Research (if enabled)
       let researchInsights = [];
       if (state['params'].enableResearch) {
-        researchInsights = await this.researchImprovements(
-          evaluation,
-          state,
-          config
-        );
+        researchInsights = await this.researchImprovements(evaluation);
       }
       
       // Optimize
       const optimizedConfig = await this.generateOptimization(
         state,
         evaluation,
-        researchInsights,
-        config
+        researchInsights
       );
       
       // Update state
@@ -255,9 +235,7 @@ export class FlowOrchestrator {
    * Research improvement strategies
    */
   private async researchImprovements(
-    evaluation: any,
-    state: OptimizationState,
-    config?: FlowConfig
+    evaluation: any
   ): Promise<any[]> {
     const tasks = [];
     
@@ -269,10 +247,8 @@ export class FlowOrchestrator {
       tasks.push(this.researcher.researchPatterns(evaluation.patterns));
     }
     
-    // Run research tasks
-    const results = config?.enableParallelAgents 
-      ? await Promise.all(tasks)
-      : await this.runSequential(tasks);
+    // Run research tasks sequentially for now
+    const results = await this.runSequential(tasks);
     
     // Flatten and deduplicate insights
     const allInsights = results.flat();
@@ -285,8 +261,7 @@ export class FlowOrchestrator {
   private async generateOptimization(
     state: OptimizationState,
     evaluation: any,
-    researchInsights: any[],
-    config?: FlowConfig
+    researchInsights: any[]
   ): Promise<any> {
     return await this.optimizer.optimize(
       state.currentConfig,

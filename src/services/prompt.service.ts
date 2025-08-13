@@ -3,7 +3,6 @@ import { PromptRepository } from '../repositories/prompt.repository.js';
 import { EvalDatasetRepository } from '../repositories/eval-dataset.repository.js';
 import { AgentService } from './agent.service.js';
 import type { Prompt, NewPrompt } from '../db/schema/prompts.js';
-import type { EvalDataset } from '../db/schema/eval-datasets.js';
 
 export interface PromptGenerationStrategy {
   type: 'dimension_emphasis' | 'reasoning_style' | 'verbosity' | 'few_shot' | 'custom';
@@ -23,7 +22,7 @@ export class PromptService {
   private evalDatasetRepo: EvalDatasetRepository;
   private promptCache: Map<string, Prompt> = new Map();
   
-  constructor(private readonly db: Database) {
+  constructor(db: Database) {
     this.promptRepo = new PromptRepository(db);
     this.evalDatasetRepo = new EvalDatasetRepository(db);
   }
@@ -80,8 +79,11 @@ export class PromptService {
     // Generate variation based on strategy
     const variationPrompt = this.createVariationPrompt(basePrompt.template, strategy);
     
-    // Use the agent to generate a new prompt
-    const response = await agentService.generatePromptVariation(variationPrompt);
+    // Use the prompt generator agent to create a new prompt
+    const result = await agentService.run(variationPrompt, {
+      agentKey: 'prompt_generator'
+    });
+    const response = typeof result.output === 'string' ? result.output : JSON.stringify(result.output);
     
     // Create unique version name
     const timestamp = Date.now();

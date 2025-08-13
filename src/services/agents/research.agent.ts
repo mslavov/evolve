@@ -1,6 +1,4 @@
 import type { DetailedFeedback, ResearchInsight, FailurePattern } from '../evaluation/types.js';
-import { AgentService } from '../agent.service.js';
-import { Database } from '../../db/client.js';
 
 export interface KnowledgeSource {
   type: 'internal' | 'external' | 'historical';
@@ -9,21 +7,13 @@ export interface KnowledgeSource {
 }
 
 export class ResearchAgent {
-  private agentService: AgentService;
   private knowledgeSources: KnowledgeSource[] = [];
   private researchCache: Map<string, ResearchInsight[]> = new Map();
   
-  constructor(private db: Database) {
-    this.agentService = new AgentService(db);
+  constructor() {
     this.initializeKnowledgeSources();
   }
   
-  /**
-   * Initialize the research agent
-   */
-  async initialize(): Promise<void> {
-    await this.agentService.initialize();
-  }
   
   /**
    * Find improvement strategies based on feedback
@@ -63,7 +53,7 @@ export class ResearchAgent {
     }
     
     // Rank insights by relevance
-    return this.rankInsights(insights, feedback);
+    return this.rankInsights(insights);
   }
   
   /**
@@ -281,8 +271,7 @@ export class ResearchAgent {
    * Rank insights by relevance
    */
   private rankInsights(
-    insights: ResearchInsight[],
-    feedback: DetailedFeedback
+    insights: ResearchInsight[]
   ): ResearchInsight[] {
     return insights.sort((a, b) => {
       // Sort by combined score of confidence and applicability

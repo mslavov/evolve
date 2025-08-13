@@ -172,9 +172,10 @@ The system uses a unified SQLite database for both scoring records and configura
 
 Configurations are persisted and survive process restarts. Use CLI commands to manage:
 ```bash
-npm run config save <name>     # Save current configuration
-npm run config load <name>     # Load saved configuration
-npm run config set-default <name>  # Set default configuration
+npm run agent list              # List all agents
+npm run agent set <name>        # Create or update an agent
+npm run agent default <name>    # Set default agent
+# Note: 'config' commands still work for backward compatibility
 ```
 
 ### MCP Server Integration

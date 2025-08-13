@@ -59,7 +59,7 @@ If successful, you should see the performance dashboard.
 
 #### Simple Text Scoring
 ```bash
-pnpm score "What is the capital of France?"
+pnpm cli run "What is the capital of France?"
 ```
 
 Expected output:
@@ -76,7 +76,7 @@ Model: gpt-4o-mini | Temp: 0.3
 
 #### Score Complex Content
 ```bash
-pnpm score "Here's how to implement OAuth2 in Node.js: First, install the required packages using npm install express passport passport-google-oauth20. Then configure your strategy..."
+pnpm cli run "Here's how to implement OAuth2 in Node.js: First, install the required packages using npm install express passport passport-google-oauth20. Then configure your strategy..."
 ```
 
 This should return a higher score (0.6-0.8) for useful technical content.
@@ -112,7 +112,7 @@ This will:
 
 Score content and provide your own evaluation:
 ```bash
-pnpm score -- -g "Machine learning is a subset of artificial intelligence"
+pnpm cli run -- -g "Machine learning is a subset of artificial intelligence"
 ```
 
 After AI scoring, you'll be prompted:
@@ -192,37 +192,65 @@ This will:
 
 Save and load configurations using CLI:
 ```bash
-# Save current configuration
-pnpm config save my-settings
+# Create a new agent
+pnpm agent set my-agent --name "My Agent" --type scorer --model gpt-4o
 
-# Load a saved configuration
-pnpm config load my-settings
+# List all agents
+pnpm agent list
 
-# Set as default (loads on startup)
-pnpm config set-default my-settings
+# Set as default agent
+pnpm agent default my-agent
 
-# List all saved configurations
-pnpm config list
+# Clone an existing agent
+pnpm agent clone default my-custom-agent
 ```
 
 Configurations are stored in the SQLite database and persist across sessions.
 
-## File-based Scoring
+## File-based Input
 
-### Score from File
+### Text from File
 ```bash
 # Create a file
 echo "Your content here" > content.txt
 
-# Score it
-pnpm score -- -f content.txt
+# Process it
+pnpm cli run -- -f content.txt
+```
+
+### JSON Input
+Create a structured input file:
+```json
+{
+  "content": "Main text to process",
+  "metadata": {
+    "source": "user",
+    "category": "technical"
+  },
+  "context": {
+    "previousScore": 0.8
+  }
+}
+```
+
+Run with JSON input:
+```bash
+pnpm cli run --input-file input.json
+
+# Save output to file
+pnpm cli run --input-file input.json --output-file results.json
 ```
 
 ### Batch Processing
-Create multiple files and score them:
+Create multiple files and process them:
 ```bash
 for file in *.txt; do
-  pnpm score -- -f "$file"
+  pnpm cli run -- -f "$file"
+done
+
+# Or with JSON files
+for file in *.json; do
+  pnpm cli run --input-file "$file" --output-file "results/${file%.json}_output.json"
 done
 ```
 
@@ -251,14 +279,14 @@ done
 ### Content Moderation
 ```bash
 # Score user-generated content
-pnpm score "User comment text here"
+pnpm cli run "User comment text here"
 # Reject if score < 0.3
 ```
 
 ### Quality Assurance
 ```bash
 # Score AI-generated content
-pnpm score -- -f generated-article.txt
+pnpm cli run -- -f generated-article.txt
 # Require score > 0.6 for publication
 ```
 
@@ -312,7 +340,7 @@ import { UsefulnessScorer } from './agents/usefulness-scorer';
 ### Debug Mode
 ```bash
 # Run with verbose output
-DEBUG=* pnpm score "test content"
+DEBUG=* pnpm cli run "test content"
 ```
 
 ### View Logs

@@ -29,6 +29,20 @@
       "when": 1755068164993,
       "tag": "0003_add_output_config_to_configs",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1755068164994,
+      "tag": "0004_transform_configs_to_agents",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1755068164995,
+      "tag": "0005_add_system_agents",
+      "breakpoints": true
     }
   ]
 }

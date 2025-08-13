@@ -42,22 +42,22 @@ Used for question-answering tasks.
 
 ```bash
 # Use a predefined schema
-pnpm cli config set myconfig --model gpt-4o --schema classification
+pnpm cli agent set myagent --model gpt-4o --schema classification
 
 # Clone and modify
-pnpm cli config clone default myconfig --schema sentiment
+pnpm cli agent clone default myagent --schema sentiment
 ```
 
 ### Using a custom schema file
 
 ```bash
 # Use a custom schema from file
-pnpm cli config set myconfig --model gpt-4o --schema-file ./schemas/classification.json
+pnpm cli agent set myagent --model gpt-4o --schema-file ./schemas/classification.json
 
 # Create your own schema
 cp schemas/extraction.json my-custom-schema.json
 # Edit my-custom-schema.json
-pnpm cli config set myconfig --schema-file ./my-custom-schema.json
+pnpm cli agent set myagent --schema-file ./my-custom-schema.json
 ```
 
 ## Schema Format

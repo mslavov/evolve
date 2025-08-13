@@ -68,27 +68,27 @@ export class RunRepository {
       conditions.push(lte(runs.createdAt, filters.endDate));
     }
     
-    let query = this.db
+    const baseQuery = this.db
       .select()
       .from(runs)
       .orderBy(desc(runs.createdAt));
     
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as any;
-    }
+    const queryWithWhere = conditions.length > 0
+      ? baseQuery.where(and(...conditions))
+      : baseQuery;
     
-    if (filters?.limit) {
-      query = query.limit(filters.limit) as any;
-    }
+    const finalQuery = filters?.limit
+      ? queryWithWhere.limit(filters.limit)
+      : queryWithWhere;
     
-    return await query;
+    return await finalQuery;
   }
   
   /**
    * Find runs pending assessment (runs without assessments)
    */
   async findPending(limit?: number): Promise<Run[]> {
-    let query = this.db
+    const baseQuery = this.db
       .select({
         run: runs,
       })
@@ -97,11 +97,11 @@ export class RunRepository {
       .where(isNull(assessments.id))
       .orderBy(desc(runs.createdAt));
     
-    if (limit) {
-      query = query.limit(limit) as any;
-    }
+    const finalQuery = limit
+      ? baseQuery.limit(limit)
+      : baseQuery;
     
-    const results = await query;
+    const results = await finalQuery;
     return results.map(r => r.run);
   }
   

@@ -14,7 +14,10 @@ export function createAgentCommand() {
     .addCommand(createShowCommand())
     .addCommand(createUpdateCommand())
     .addCommand(createDeleteCommand())
-    .addCommand(createCloneCommand());
+    .addCommand(createCloneCommand())
+    .addCommand(createVersionCommand())
+    .addCommand(createHistoryCommand())
+    .addCommand(createRollbackCommand());
   
   return command;
 }
@@ -353,6 +356,192 @@ function createCloneCommand() {
         console.log(chalk.gray(`Model: ${cloned.model}, Temperature: ${cloned.temperature}`));
       } catch (error) {
         spinner.fail('Failed to clone agent');
+        console.error(chalk.red('Error:'), error);
+        process.exit(1);
+      }
+    });
+}
+
+function createVersionCommand() {
+  return new Command('version')
+    .description('Create a new version of an agent')
+    .argument('<key>', 'Agent key')
+    .option('-m, --model <model>', 'New model')
+    .option('-t, --temperature <temp>', 'New temperature', parseFloat)
+    .option('--max-tokens <tokens>', 'New max tokens', parseInt)
+    .option('--prompt-id <id>', 'New prompt ID')
+    .option('-r, --reason <reason>', 'Reason for creating new version')
+    .action(async (key, options) => {
+      const spinner = ora('Creating new agent version...').start();
+      
+      try {
+        const db = getDatabase();
+        const agentService = new AgentService(db);
+        
+        // Check if agent exists
+        const agent = await agentService.getAgent(key);
+        if (!agent) {
+          throw new Error(`Agent "${key}" not found`);
+        }
+        
+        // Create new version
+        const updatedAgent = await agentService.createAgentVersion(key, {
+          model: options.model,
+          temperature: options.temperature,
+          maxTokens: options.maxTokens,
+          promptId: options.promptId,
+          improvementReason: options.reason || 'Manual version update',
+        });
+        
+        spinner.succeed(`Agent "${key}" updated to version ${updatedAgent.version}`);
+        console.log(chalk.gray(`Previous version: ${agent.version}`));
+        console.log(chalk.gray(`New version: ${updatedAgent.version}`));
+        
+        if (options.model) {
+          console.log(chalk.gray(`Model: ${agent.model} → ${updatedAgent.model}`));
+        }
+        if (options.temperature !== undefined) {
+          console.log(chalk.gray(`Temperature: ${agent.temperature} → ${updatedAgent.temperature}`));
+        }
+        if (options.maxTokens) {
+          console.log(chalk.gray(`Max Tokens: ${agent.maxTokens || 'default'} → ${updatedAgent.maxTokens}`));
+        }
+        if (options.promptId) {
+          console.log(chalk.gray(`Prompt: ${agent.promptId} → ${updatedAgent.promptId}`));
+        }
+      } catch (error) {
+        spinner.fail('Failed to create agent version');
+        console.error(chalk.red('Error:'), error);
+        process.exit(1);
+      }
+    });
+}
+
+function createHistoryCommand() {
+  return new Command('history')
+    .description('Show version history for an agent')
+    .argument('<key>', 'Agent key')
+    .option('-l, --limit <n>', 'Limit number of versions shown', parseInt, 10)
+    .action(async (key, options) => {
+      const spinner = ora('Loading version history...').start();
+      
+      try {
+        const db = getDatabase();
+        const agentService = new AgentService(db);
+        
+        // Get current agent
+        const agent = await agentService.getAgent(key);
+        if (!agent) {
+          throw new Error(`Agent "${key}" not found`);
+        }
+        
+        // Get version history
+        const versions = await agentService.getAgentVersionHistory(key);
+        
+        spinner.stop();
+        
+        console.log(chalk.cyan(`\n📊 Version History for "${key}":\n`));
+        console.log(chalk.bold(`Current Version: ${agent.version}`));
+        console.log();
+        
+        const displayVersions = options.limit ? versions.slice(0, options.limit) : versions;
+        
+        for (const version of displayVersions) {
+          console.log(chalk.bold(`Version ${version.version}`) + chalk.gray(` (${new Date(version.createdAt).toLocaleString()})`));
+          
+          if (version.improvementReason) {
+            console.log(`  Reason: ${version.improvementReason}`);
+          }
+          
+          console.log(`  Model: ${version.model}, Temp: ${version.temperature}`);
+          
+          if (version.averageScore !== null) {
+            console.log(`  Score: ${version.averageScore.toFixed(3)} (${version.evaluationCount} evals)`);
+          }
+          
+          if (version.changesMade) {
+            const changes = [];
+            if (version.changesMade.model) changes.push('model');
+            if (version.changesMade.temperature) changes.push('temperature');
+            if (version.changesMade.maxTokens) changes.push('maxTokens');
+            if (version.changesMade.prompt) changes.push('prompt');
+            if (version.changesMade.outputSchema) changes.push('schema');
+            if (changes.length > 0) {
+              console.log(`  Changes: ${changes.join(', ')}`);
+            }
+          }
+          console.log();
+        }
+        
+        if (versions.length > displayVersions.length) {
+          console.log(chalk.gray(`... and ${versions.length - displayVersions.length} more versions`));
+        }
+      } catch (error) {
+        spinner.fail('Failed to load version history');
+        console.error(chalk.red('Error:'), error);
+        process.exit(1);
+      }
+    });
+}
+
+function createRollbackCommand() {
+  return new Command('rollback')
+    .description('Rollback an agent to a previous version')
+    .argument('<key>', 'Agent key')
+    .argument('<version>', 'Target version number', parseInt)
+    .option('-r, --reason <reason>', 'Reason for rollback')
+    .option('-f, --force', 'Skip confirmation')
+    .action(async (key, targetVersion, options) => {
+      const spinner = ora('Preparing rollback...').start();
+      
+      try {
+        const db = getDatabase();
+        const agentService = new AgentService(db);
+        
+        // Get current agent
+        const agent = await agentService.getAgent(key);
+        if (!agent) {
+          throw new Error(`Agent "${key}" not found`);
+        }
+        
+        spinner.stop();
+        
+        // Confirm rollback
+        if (!options.force) {
+          console.log(chalk.yellow('\n⚠️  Warning: Rolling back agent version'));
+          console.log(chalk.gray(`Current version: ${agent.version}`));
+          console.log(chalk.gray(`Target version: ${targetVersion}`));
+          console.log(chalk.gray('A new version will be created with the configuration from the target version.'));
+          
+          const readline = await import('readline');
+          const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+          });
+          
+          const answer = await new Promise<string>(resolve => {
+            rl.question(chalk.cyan('Proceed with rollback? (y/N) '), resolve);
+          });
+          rl.close();
+          
+          if (answer.toLowerCase() !== 'y') {
+            console.log('Rollback cancelled');
+            process.exit(0);
+          }
+        }
+        
+        spinner.start('Rolling back agent...');
+        
+        // Perform rollback
+        const rolledBackAgent = await agentService.rollbackAgent(key, targetVersion);
+        
+        spinner.succeed(`Agent "${key}" rolled back to configuration from version ${targetVersion}`);
+        console.log(chalk.gray(`New version created: ${rolledBackAgent.version}`));
+        console.log(chalk.gray(`Model: ${rolledBackAgent.model}`));
+        console.log(chalk.gray(`Temperature: ${rolledBackAgent.temperature}`));
+        console.log(chalk.gray(`Prompt: ${rolledBackAgent.promptId}`));
+      } catch (error) {
+        spinner.fail('Failed to rollback agent');
         console.error(chalk.red('Error:'), error);
         process.exit(1);
       }

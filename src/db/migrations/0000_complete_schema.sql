@@ -32,11 +32,12 @@ CREATE INDEX `prompt_active_idx` ON `prompts` (`is_active`);--> statement-breakp
 CREATE INDEX `prompt_production_idx` ON `prompts` (`is_production`);--> statement-breakpoint
 CREATE UNIQUE INDEX `prompt_version_unique` ON `prompts` (`version`);--> statement-breakpoint
 
--- Create agents table (without schemaVersion, with extended types)
+-- Create agents table (with versioning support)
 CREATE TABLE `agents` (
 	`id` text PRIMARY KEY NOT NULL,
 	`key` text NOT NULL UNIQUE,
 	`name` text NOT NULL,
+	`version` integer NOT NULL DEFAULT 1,
 	`type` text NOT NULL DEFAULT 'user' CHECK(type IN ('system', 'user', 'scorer', 'evaluator', 'optimizer', 'researcher', 'generator', 'classifier', 'extractor', 'summarizer', 'translator')),
 	`model` text NOT NULL,
 	`temperature` real NOT NULL,
@@ -61,11 +62,40 @@ CREATE UNIQUE INDEX `agent_key_idx` ON `agents` (`key`);--> statement-breakpoint
 CREATE INDEX `agent_type_idx` ON `agents` (`type`);--> statement-breakpoint
 CREATE INDEX `agent_system_idx` ON `agents` (`is_system_agent`);--> statement-breakpoint
 CREATE INDEX `agent_active_idx` ON `agents` (`is_active`);--> statement-breakpoint
+CREATE INDEX `agent_version_idx` ON `agents` (`version`);--> statement-breakpoint
 
--- Create runs table
+-- Create agent_versions table for version history
+CREATE TABLE `agent_versions` (
+	`id` text PRIMARY KEY NOT NULL,
+	`agent_id` text NOT NULL,
+	`version` integer NOT NULL,
+	`parent_version` integer,
+	`name` text NOT NULL,
+	`model` text NOT NULL,
+	`temperature` real NOT NULL,
+	`max_tokens` integer,
+	`prompt_id` text NOT NULL,
+	`output_type` text NOT NULL DEFAULT 'structured',
+	`output_schema` text,
+	`average_score` real,
+	`evaluation_count` integer DEFAULT 0,
+	`improvement_reason` text,
+	`changes_made` text,
+	`metadata` text,
+	`created_at` integer NOT NULL,
+	FOREIGN KEY (`agent_id`) REFERENCES `agents`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`prompt_id`) REFERENCES `prompts`(`version`) ON UPDATE no action ON DELETE restrict
+);
+--> statement-breakpoint
+CREATE INDEX `agent_version_agent_idx` ON `agent_versions` (`agent_id`);--> statement-breakpoint
+CREATE INDEX `agent_version_version_idx` ON `agent_versions` (`version`);--> statement-breakpoint
+CREATE UNIQUE INDEX `agent_version_unique` ON `agent_versions` (`agent_id`, `version`);--> statement-breakpoint
+
+-- Create runs table (with agent version tracking)
 CREATE TABLE `runs` (
 	`id` text PRIMARY KEY NOT NULL,
 	`agent_id` text NOT NULL,
+	`agent_version` integer NOT NULL DEFAULT 1,
 	`parent_run_id` text,
 	`input` text NOT NULL,
 	`output` text NOT NULL,
@@ -87,6 +117,7 @@ CREATE TABLE `runs` (
 );
 --> statement-breakpoint
 CREATE INDEX `run_agent_idx` ON `runs` (`agent_id`);--> statement-breakpoint
+CREATE INDEX `run_agent_version_idx` ON `runs` (`agent_id`, `agent_version`);--> statement-breakpoint
 CREATE INDEX `run_parent_idx` ON `runs` (`parent_run_id`);--> statement-breakpoint
 CREATE INDEX `run_type_idx` ON `runs` (`run_type`);--> statement-breakpoint
 CREATE INDEX `run_iteration_idx` ON `runs` (`iteration`);--> statement-breakpoint
@@ -286,11 +317,12 @@ Provide:
     unixepoch()
   );
 
--- Insert system agents (without schemaVersion)
+-- Insert system agents (with version)
 INSERT INTO agents (
   id,
   key,
   name,
+  version,
   type,
   model,
   temperature,
@@ -299,7 +331,6 @@ INSERT INTO agents (
   output_type,
   output_schema,
   description,
-  is_default,
   is_active,
   is_system_agent,
   created_at,
@@ -311,6 +342,7 @@ VALUES
     'agent_prompt_gen_id',
     'prompt_generator',
     'Prompt Generation Agent',
+    1,
     'generator',
     'gpt-4o-mini',
     0.8,
@@ -319,7 +351,6 @@ VALUES
     'text',
     NULL,
     'System agent for generating prompt variations and improvements',
-    0,
     1,
     1,
     unixepoch(),
@@ -331,6 +362,7 @@ VALUES
     'agent_research_id',
     'researcher',
     'Research Agent',
+    1,
     'researcher',
     'gpt-4o-mini',
     0.7,
@@ -339,7 +371,6 @@ VALUES
     'text',
     NULL,
     'System agent for conducting research and finding improvement strategies',
-    0,
     1,
     1,
     unixepoch(),
@@ -351,6 +382,7 @@ VALUES
     'agent_eval_id',
     'evaluator',
     'Evaluation Agent',
+    1,
     'evaluator',
     'gpt-4o-mini',
     0.3,
@@ -359,7 +391,6 @@ VALUES
     'structured',
     json('{"type": "object", "properties": {"score": {"type": "number"}, "breakdown": {"type": "object"}, "strengths": {"type": "array"}, "improvements": {"type": "array"}}}'),
     'System agent for evaluating other agents performance',
-    0,
     1,
     1,
     unixepoch(),
@@ -371,6 +402,7 @@ VALUES
     'agent_optimize_id',
     'optimizer',
     'Optimization Agent',
+    1,
     'optimizer',
     'gpt-4o-mini',
     0.5,
@@ -379,7 +411,6 @@ VALUES
     'structured',
     json('{"type": "object", "properties": {"recommendations": {"type": "array"}, "priority": {"type": "array"}, "expectedImprovement": {"type": "number"}}}'),
     'System agent for optimizing configurations and parameters',
-    0,
     1,
     1,
     unixepoch(),
@@ -391,6 +422,7 @@ VALUES
     'agent_assess_id',
     'assessor',
     'Assessment Agent',
+    1,
     'evaluator',
     'gpt-4o-mini',
     0.2,
@@ -399,7 +431,6 @@ VALUES
     'structured',
     json('{"type": "object", "properties": {"verdict": {"type": "string", "enum": ["correct", "incorrect"]}, "confidence": {"type": "number"}, "reasoning": {"type": "string"}, "correctedScore": {"type": "number"}, "issues": {"type": "array"}}}'),
     'System agent for assessing run quality and correctness',
-    0,
     1,
     1,
     unixepoch(),

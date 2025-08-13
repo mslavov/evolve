@@ -7,6 +7,7 @@ export const runs = sqliteTable('runs', {
   
   // Agent relationship
   agentId: text('agent_id').notNull().references(() => agents.id),
+  agentVersion: integer('agent_version').notNull().default(1),
   parentRunId: text('parent_run_id').references(() => runs.id),
   
   // Input/Output
@@ -35,6 +36,7 @@ export const runs = sqliteTable('runs', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
   agentIdx: index('run_agent_idx').on(table.agentId),
+  agentVersionIdx: index('run_agent_version_idx').on(table.agentId, table.agentVersion),
   parentIdx: index('run_parent_idx').on(table.parentRunId),
   typeIdx: index('run_type_idx').on(table.runType),
   iterationIdx: index('run_iteration_idx').on(table.iteration),

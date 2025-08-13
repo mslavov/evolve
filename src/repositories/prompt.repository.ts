@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { eq, desc, and, sql, inArray, gte } from 'drizzle-orm';
 import { BaseRepository } from './base.repository.js';
 import { prompts, type Prompt, type NewPrompt } from '../db/schema/prompts.js';
@@ -79,8 +78,6 @@ export class PromptRepository extends BaseRepository {
    * Find prompts with filters
    */
   async findMany(filters?: PromptFilters): Promise<Prompt[]> {
-    let query = this.db.select().from(prompts);
-    
     const conditions = [];
     
     if (filters?.isActive !== undefined) {
@@ -103,17 +100,19 @@ export class PromptRepository extends BaseRepository {
       conditions.push(eq(prompts.parentVersion, filters.parentVersion));
     }
     
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions));
-    }
+    const baseQuery = this.db.select().from(prompts);
     
-    query = query.orderBy(desc(prompts.createdAt));
+    const queryWithWhere = conditions.length > 0
+      ? baseQuery.where(and(...conditions))
+      : baseQuery;
     
-    if (filters?.limit) {
-      query = query.limit(filters.limit);
-    }
+    const queryWithOrder = queryWithWhere.orderBy(desc(prompts.createdAt));
     
-    let results = await query;
+    const finalQuery = filters?.limit
+      ? queryWithOrder.limit(filters.limit)
+      : queryWithOrder;
+    
+    let results = await finalQuery;
     
     // Filter by tags in memory if specified
     if (filters?.tags && filters.tags.length > 0) {

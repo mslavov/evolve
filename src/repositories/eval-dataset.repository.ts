@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { eq, desc, and, gte, lte, sql, inArray } from 'drizzle-orm';
 import { BaseRepository } from './base.repository.js';
 import { evalDatasets, type EvalDataset, type NewEvalDataset } from '../db/schema/eval-datasets.js';
@@ -45,25 +44,11 @@ export class EvalDatasetRepository extends BaseRepository {
    * Find eval dataset records with filters
    */
   async findMany(filters?: DatasetFilters): Promise<EvalDataset[]> {
-    let query = this.db.select().from(evalDatasets);
-    
     const conditions = [];
     
-    if (filters?.source) {
-      conditions.push(eq(evalDatasets.metadata.source, filters.source));
-    }
-    
-    if (filters?.split) {
-      conditions.push(eq(evalDatasets.datasetSplit, filters.split));
-    }
-    
-    if (filters?.version) {
-      conditions.push(eq(evalDatasets.datasetVersion, filters.version));
-    }
-    
-    if (filters?.quality) {
-      conditions.push(eq(evalDatasets.metadata.quality, filters.quality));
-    }
+    // Note: source, split, version, quality are stored in metadata JSON
+    // SQL filters on JSON fields are limited in SQLite
+    // We'll do post-query filtering for these
     
     if (filters?.minScore !== undefined) {
       conditions.push(gte(evalDatasets.correctedScore, filters.minScore));
@@ -73,27 +58,43 @@ export class EvalDatasetRepository extends BaseRepository {
       conditions.push(lte(evalDatasets.correctedScore, filters.maxScore));
     }
     
-    // Note: Tags filtering would require JSON operations
-    // For now, we'll filter in memory after the query
+    const baseQuery = this.db.select().from(evalDatasets);
     
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions));
-    }
+    const queryWithWhere = conditions.length > 0
+      ? baseQuery.where(and(...conditions))
+      : baseQuery;
     
-    query = query.orderBy(desc(evalDatasets.addedAt));
+    const queryWithOrder = queryWithWhere.orderBy(desc(evalDatasets.createdAt));
     
-    if (filters?.limit) {
-      query = query.limit(filters.limit);
-    }
+    const finalQuery = filters?.limit
+      ? queryWithOrder.limit(filters.limit)
+      : queryWithOrder;
     
-    let results = await query;
+    let results = await finalQuery;
     
-    // Filter by tags in memory if specified
+    // Filter by metadata fields in memory if specified
     if (filters?.tags && filters.tags.length > 0) {
       results = results.filter(record => {
-        if (!record.datasetTags) return false;
-        return filters.tags!.some(tag => record.datasetTags?.includes(tag));
+        const tags = record.metadata?.tags as string[] | undefined;
+        if (!tags) return false;
+        return filters.tags!.some(tag => tags.includes(tag));
       });
+    }
+    
+    if (filters?.source) {
+      results = results.filter(record => record.metadata?.source === filters.source);
+    }
+    
+    if (filters?.split) {
+      results = results.filter(record => record.metadata?.split === filters.split);
+    }
+    
+    if (filters?.version) {
+      results = results.filter(record => record.metadata?.version === filters.version);
+    }
+    
+    if (filters?.quality) {
+      results = results.filter(record => record.metadata?.quality === filters.quality);
     }
     
     return results;
@@ -133,51 +134,41 @@ export class EvalDatasetRepository extends BaseRepository {
       })
       .from(evalDatasets);
     
-    const splitStats = await this.db
-      .select({
-        split: evalDatasets.datasetSplit,
-        count: sql<number>`count(*)`,
-      })
-      .from(evalDatasets)
-      .groupBy(evalDatasets.datasetSplit);
+    // Since metadata fields are in JSON, we need to extract them
+    // SQLite JSON functions are limited, so we'll get all records and process in memory
+    const allRecords = await this.db.select().from(evalDatasets);
     
-    const sourceStats = await this.db
-      .select({
-        source: evalDatasets.metadata.source,
-        count: sql<number>`count(*)`,
-      })
-      .from(evalDatasets)
-      .groupBy(evalDatasets.metadata.source);
+    const splitStats = new Map<string, number>();
+    const sourceStats = new Map<string, number>();
+    const qualityStats = new Map<string, number>();
+    const versionsSet = new Set<string>();
     
-    const qualityStats = await this.db
-      .select({
-        quality: evalDatasets.metadata.quality,
-        count: sql<number>`count(*)`,
-      })
-      .from(evalDatasets)
-      .groupBy(evalDatasets.metadata.quality);
-    
-    const versions = await this.db
-      .selectDistinct({ version: evalDatasets.datasetVersion })
-      .from(evalDatasets)
-      .where(sql`${evalDatasets.datasetVersion} is not null`);
+    for (const record of allRecords) {
+      const split = record.metadata?.split as string;
+      const source = record.metadata?.source as string;
+      const quality = record.metadata?.quality as string;
+      const version = record.metadata?.version as string;
+      
+      if (split) {
+        splitStats.set(split, (splitStats.get(split) || 0) + 1);
+      }
+      if (source) {
+        sourceStats.set(source, (sourceStats.get(source) || 0) + 1);
+      }
+      if (quality) {
+        qualityStats.set(quality, (qualityStats.get(quality) || 0) + 1);
+      }
+      if (version) {
+        versionsSet.add(version);
+      }
+    }
     
     const stats = statsQuery[0];
     
-    const bySplit: Record<string, number> = {};
-    for (const stat of splitStats) {
-      if (stat.split) bySplit[stat.split] = stat.count;
-    }
-    
-    const bySource: Record<string, number> = {};
-    for (const stat of sourceStats) {
-      bySource[stat.source] = stat.count;
-    }
-    
-    const byQuality: Record<string, number> = {};
-    for (const stat of qualityStats) {
-      if (stat.quality) byQuality[stat.quality] = stat.count;
-    }
+    const bySplit: Record<string, number> = Object.fromEntries(splitStats);
+    const bySource: Record<string, number> = Object.fromEntries(sourceStats);
+    const byQuality: Record<string, number> = Object.fromEntries(qualityStats);
+    const versions = Array.from(versionsSet);
     
     return {
       totalRecords: stats.totalRecords || 0,
@@ -185,7 +176,7 @@ export class EvalDatasetRepository extends BaseRepository {
       bySource,
       byQuality,
       averageScore: stats.avgScore || 0,
-      versions: versions.map(v => v.version!).filter(Boolean),
+      versions,
     };
   }
   

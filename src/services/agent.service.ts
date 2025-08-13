@@ -5,6 +5,10 @@ import { PromptService } from './prompt.service.js';
 import { providerFactory, type LLMMessage } from '../providers/index.js';
 import type { Agent, NewAgent } from '../db/schema/agents.js';
 import type { Run, NewRun } from '../db/schema/runs.js';
+import type { AgentVersion, NewAgentVersion } from '../db/schema/agent-versions.js';
+import { agentVersions } from '../db/schema/agent-versions.js';
+import { z } from 'zod';
+import { eq, and, desc } from 'drizzle-orm';
 
 export interface RunOptions {
   agentKey?: string; // Agent to use
@@ -18,11 +22,13 @@ export interface RunResult {
 }
 
 export class AgentService {
+  private db: Database;
   private runRepo: RunRepository;
   private agentRepo: AgentRepository;
   private promptService: PromptService;
   
   constructor(db: Database) {
+    this.db = db;
     this.runRepo = new RunRepository(db);
     this.agentRepo = new AgentRepository(db);
     this.promptService = new PromptService(db);
@@ -54,64 +60,148 @@ export class AgentService {
       throw new Error(`Failed to initialize agent '${agentKey}'`);
     }
     
-    // Format input
-    const inputStr = typeof input === 'string' ? input : JSON.stringify(input, null, 2);
+    // Apply prompt template with dictionary-based replacement
+    let promptText = currentPrompt.template;
     
-    // Apply prompt template
-    const promptText = currentPrompt.template.replace('{{input}}', inputStr);
-    
-    // Build messages for LLM
-    const messages: LLMMessage[] = [];
-    
-    // Add system message with schema if structured output is expected
-    if (agent.outputType === 'structured' && agent.outputSchema) {
-      messages.push({
-        role: 'system',
-        content: `You must respond with valid JSON that matches this schema:\n${JSON.stringify(agent.outputSchema, null, 2)}\n\nDo not include any text before or after the JSON.`,
-      });
+    if (typeof input === 'object' && input !== null) {
+      // Replace individual keys from the input object
+      for (const [key, value] of Object.entries(input)) {
+        const placeholder = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+        const valueStr = typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
+        promptText = promptText.replace(placeholder, valueStr);
+      }
+      
+      // Also replace {{input}} with the full JSON for backwards compatibility
+      const fullInputStr = JSON.stringify(input, null, 2);
+      promptText = promptText.replace(/\{\{input\}\}/g, fullInputStr);
+    } else {
+      // String input - keep current behavior
+      const inputStr = typeof input === 'string' ? input : String(input);
+      promptText = promptText.replace(/\{\{input\}\}/g, inputStr);
     }
     
-    messages.push({
+    // Build messages for LLM
+    const messages: LLMMessage[] = [{
       role: 'user',
       content: promptText,
-    });
+    }];
     
     // Run the LLM
     const startTime = Date.now();
-    const result = await provider.generateText(messages, {
-      temperature: agent.temperature,
-      maxTokens: agent.maxTokens || undefined,
-    });
-    const executionTime = Date.now() - startTime;
-    
-    // Parse output based on output type
+    let result: any;
     let parsedOutput: any;
-    if (agent.outputType === 'structured') {
-      try {
-        // Try to parse as JSON
-        const jsonMatch = result.content.match(/```json\n?([\s\S]*?)\n?```/) || 
-                         result.content.match(/\{[\s\S]*\}/);
-        const jsonStr = jsonMatch ? 
-          (jsonMatch[1] || jsonMatch[0]) : 
-          result.content;
+    
+    if (agent.outputType === 'structured' && agent.outputSchema) {
+      // Check if provider has generateStructured method
+      if ('generateStructured' in provider && typeof provider.generateStructured === 'function') {
+        try {
+          // Simple JSON Schema to Zod converter for common cases
+          const createZodSchema = (jsonSchema: any): z.ZodType<any> => {
+            if (jsonSchema.type === 'object' && jsonSchema.properties) {
+              const shape: Record<string, z.ZodType<any>> = {};
+              for (const [key, value] of Object.entries(jsonSchema.properties as any)) {
+                const prop = createZodSchema(value);
+                shape[key] = jsonSchema.required?.includes(key) ? prop : prop.optional();
+              }
+              return z.object(shape);
+            } else if (jsonSchema.type === 'string') {
+              return z.string();
+            } else if (jsonSchema.type === 'number' || jsonSchema.type === 'integer') {
+              return z.number();
+            } else if (jsonSchema.type === 'boolean') {
+              return z.boolean();
+            } else if (jsonSchema.type === 'array' && jsonSchema.items) {
+              return z.array(createZodSchema(jsonSchema.items));
+            } else {
+              return z.any();
+            }
+          };
+          
+          const zodSchema = createZodSchema(agent.outputSchema);
+          
+          result = await provider.generateStructured(
+            messages,
+            zodSchema,
+            {
+              temperature: agent.temperature,
+              maxTokens: agent.maxTokens || undefined,
+            }
+          );
+          parsedOutput = result.content;
+        } catch (error) {
+          console.warn('Structured output with provider failed, falling back to text generation:', error);
+          // Set result to null to trigger fallback
+          result = null;
+        }
+      }
+      
+      // Fallback to text generation with schema instruction if structured output not available
+      if (!result) {
+        messages.unshift({
+          role: 'system',
+          content: `You must respond with valid JSON that matches this schema:\n${JSON.stringify(agent.outputSchema, null, 2)}\n\nDo not include any text before or after the JSON.`,
+        });
         
-        parsedOutput = JSON.parse(jsonStr);
+        result = await provider.generateText(messages, {
+          temperature: agent.temperature,
+          maxTokens: agent.maxTokens || undefined,
+        });
         
-        // outputSchema is passed to the LLM for structured output
-        // No additional validation needed here as the LLM handles it
-      } catch (error) {
-        console.warn('Failed to parse structured output, using raw output:', error);
-        parsedOutput = result.content;
+        // Try to parse JSON from text output
+        try {
+          const jsonMatch = result.content.match(/```json\n?([\s\S]*?)\n?```/) || 
+                           result.content.match(/\{[\s\S]*\}/);
+          const jsonStr = jsonMatch ? 
+            (jsonMatch[1] || jsonMatch[0]) : 
+            result.content;
+          
+          parsedOutput = JSON.parse(jsonStr);
+          
+          // Validate against schema using Zod
+          const createZodSchema = (jsonSchema: any): z.ZodType<any> => {
+            if (jsonSchema.type === 'object' && jsonSchema.properties) {
+              const shape: Record<string, z.ZodType<any>> = {};
+              for (const [key, value] of Object.entries(jsonSchema.properties as any)) {
+                const prop = createZodSchema(value);
+                shape[key] = jsonSchema.required?.includes(key) ? prop : prop.optional();
+              }
+              return z.object(shape);
+            } else if (jsonSchema.type === 'string') {
+              return z.string();
+            } else if (jsonSchema.type === 'number' || jsonSchema.type === 'integer') {
+              return z.number();
+            } else if (jsonSchema.type === 'boolean') {
+              return z.boolean();
+            } else if (jsonSchema.type === 'array' && jsonSchema.items) {
+              return z.array(createZodSchema(jsonSchema.items));
+            } else {
+              return z.any();
+            }
+          };
+          
+          const zodSchema = createZodSchema(agent.outputSchema);
+          parsedOutput = zodSchema.parse(parsedOutput);
+        } catch (error) {
+          console.warn('Failed to parse or validate structured output:', error);
+          parsedOutput = result.content;
+        }
       }
     } else {
+      // Regular text generation
+      result = await provider.generateText(messages, {
+        temperature: agent.temperature,
+        maxTokens: agent.maxTokens || undefined,
+      });
       parsedOutput = result.content;
     }
+    
+    const executionTime = Date.now() - startTime;
     
     // Save the run
     const runData: NewRun = {
       agentId: agent.id,
       parentRunId: options?.parentRunId,
-      input: inputStr,
+      input: typeof input === 'string' ? input : JSON.stringify(input, null, 2),
       output: parsedOutput,
       rawOutput: result.content,
       configSnapshot: {
@@ -242,5 +332,127 @@ export class AgentService {
     }
     
     await this.agentRepo.deleteByKey(key);
+  }
+  
+  /**
+   * Create a new version of an agent
+   */
+  async createAgentVersion(agentKey: string, changes: {
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+    promptId?: string;
+    outputSchema?: Record<string, any>;
+    improvementReason?: string;
+  }): Promise<Agent> {
+    const agent = await this.agentRepo.findByKey(agentKey);
+    if (!agent) {
+      throw new Error(`Agent with key '${agentKey}' not found`);
+    }
+    
+    // Save current version to history
+    const versionData: NewAgentVersion = {
+      agentId: agent.id,
+      version: agent.version,
+      parentVersion: agent.version > 1 ? agent.version - 1 : null,
+      name: agent.name,
+      model: agent.model,
+      temperature: agent.temperature,
+      maxTokens: agent.maxTokens,
+      promptId: agent.promptId,
+      outputType: agent.outputType,
+      outputSchema: agent.outputSchema,
+      averageScore: agent.averageScore,
+      evaluationCount: agent.evaluationCount,
+      improvementReason: changes.improvementReason,
+      changesMade: {
+        model: changes.model !== undefined && changes.model !== agent.model,
+        temperature: changes.temperature !== undefined && changes.temperature !== agent.temperature,
+        maxTokens: changes.maxTokens !== undefined && changes.maxTokens !== agent.maxTokens,
+        prompt: changes.promptId !== undefined && changes.promptId !== agent.promptId,
+        outputSchema: changes.outputSchema !== undefined,
+      },
+    };
+    
+    await this.db.insert(agentVersions).values(versionData);
+    
+    // Update agent with new version
+    const updatedAgent = await this.agentRepo.update(agent.id, {
+      version: agent.version + 1,
+      model: changes.model ?? agent.model,
+      temperature: changes.temperature ?? agent.temperature,
+      maxTokens: changes.maxTokens ?? agent.maxTokens,
+      promptId: changes.promptId ?? agent.promptId,
+      outputSchema: changes.outputSchema ?? agent.outputSchema,
+      averageScore: null, // Reset score for new version
+      evaluationCount: 0, // Reset count for new version
+      updatedAt: new Date(),
+    });
+    
+    return updatedAgent;
+  }
+  
+  /**
+   * Get version history for an agent
+   */
+  async getAgentVersionHistory(agentKey: string): Promise<AgentVersion[]> {
+    const agent = await this.agentRepo.findByKey(agentKey);
+    if (!agent) {
+      throw new Error(`Agent with key '${agentKey}' not found`);
+    }
+    
+    const versions = await this.db
+      .select()
+      .from(agentVersions)
+      .where(eq(agentVersions.agentId, agent.id))
+      .orderBy(desc(agentVersions.version));
+    
+    return versions;
+  }
+  
+  /**
+   * Rollback agent to a previous version
+   */
+  async rollbackAgent(agentKey: string, targetVersion: number): Promise<Agent> {
+    const agent = await this.agentRepo.findByKey(agentKey);
+    if (!agent) {
+      throw new Error(`Agent with key '${agentKey}' not found`);
+    }
+    
+    // Find the target version
+    const [versionRecord] = await this.db
+      .select()
+      .from(agentVersions)
+      .where(
+        and(
+          eq(agentVersions.agentId, agent.id),
+          eq(agentVersions.version, targetVersion)
+        )
+      )
+      .limit(1);
+    
+    if (!versionRecord) {
+      throw new Error(`Version ${targetVersion} not found for agent '${agentKey}'`);
+    }
+    
+    // Save current state as a version before rollback
+    await this.createAgentVersion(agentKey, {
+      improvementReason: `Rollback from v${agent.version} to v${targetVersion}`,
+    });
+    
+    // Restore the agent to the target version
+    const restoredAgent = await this.agentRepo.update(agent.id, {
+      model: versionRecord.model,
+      temperature: versionRecord.temperature,
+      maxTokens: versionRecord.maxTokens,
+      promptId: versionRecord.promptId,
+      outputSchema: versionRecord.outputSchema,
+      averageScore: versionRecord.averageScore,
+      evaluationCount: versionRecord.evaluationCount,
+      version: agent.version + 1, // Increment version even for rollback
+      updatedAt: new Date(),
+    });
+    
+    return restoredAgent;
   }
 }

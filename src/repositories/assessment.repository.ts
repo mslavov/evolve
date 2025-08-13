@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { eq, desc, and, gte, lte, sql, inArray } from 'drizzle-orm';
 import { BaseRepository } from './base.repository.js';
 import { assessments, type Assessment, type NewAssessment } from '../db/schema/assessments.js';
@@ -31,7 +30,7 @@ export class AssessmentRepository extends BaseRepository {
   constructor(db: Database) {
     super(db);
   }
-  
+
   /**
    * Create a new assessment
    */
@@ -40,66 +39,68 @@ export class AssessmentRepository extends BaseRepository {
       .insert(assessments)
       .values(data)
       .returning();
-    
+
     return assessment;
   }
-  
+
   /**
    * Find assessments with filters
    */
   async findMany(filters?: AssessmentFilters): Promise<Assessment[]> {
-    let query = this.db.select().from(assessments);
-    
     const conditions = [];
-    
+
     if (filters?.runId) {
       conditions.push(eq(assessments.runId, filters.runId));
     }
-    
+
     if (filters?.verdict) {
       conditions.push(eq(assessments.verdict, filters.verdict));
     }
-    
+
     if (filters?.assessedBy) {
       conditions.push(eq(assessments.assessedBy, filters.assessedBy));
     }
-    
+
     if (filters?.assessorId) {
       conditions.push(eq(assessments.assessorId, filters.assessorId));
     }
-    
+
     if (filters?.minConfidence !== undefined) {
       conditions.push(gte(assessments.confidence, filters.minConfidence));
     }
-    
+
     if (filters?.startDate) {
       conditions.push(gte(assessments.timestamp, filters.startDate));
     }
-    
+
     if (filters?.endDate) {
       conditions.push(lte(assessments.timestamp, filters.endDate));
     }
+
+    const baseQuery = this.db
+      .select()
+      .from(assessments);
     
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions));
-    }
+    const queryWithWhere = conditions.length > 0
+      ? baseQuery.where(and(...conditions))
+      : baseQuery;
     
-    query = query.orderBy(desc(assessments.timestamp));
+    const queryWithOrder = queryWithWhere.orderBy(desc(assessments.timestamp));
     
-    if (filters?.limit) {
-      query = query.limit(filters.limit);
-    }
-    
-    return await query;
+    const finalQuery = filters?.limit
+      ? queryWithOrder.limit(filters.limit)
+      : queryWithOrder;
+
+    return await finalQuery;
   }
-  
+
   /**
    * Get assessments for a specific run
    */
   async findByRunId(runId: string): Promise<Assessment[]> {
     return this.findMany({ runId });
   }
-  
+
   /**
    * Get statistics about assessments
    */
@@ -112,7 +113,7 @@ export class AssessmentRepository extends BaseRepository {
         avgCorrection: sql<number>`avg(case when ${assessments.verdict} = 'incorrect' and ${assessments.correctedScore} is not null then abs(${assessments.correctedScore} - 0.5) else null end)`,
       })
       .from(assessments);
-    
+
     const assessorStats = await this.db
       .select({
         assessorId: assessments.assessorId,
@@ -122,22 +123,22 @@ export class AssessmentRepository extends BaseRepository {
       })
       .from(assessments)
       .groupBy(assessments.assessorId, assessments.assessedBy);
-    
+
     const stats = statsQuery[0];
     const byAssessor: Record<string, { count: number; accuracyRate: number }> = {};
-    
+
     for (const assessorStat of assessorStats) {
       const key = assessorStat.assessorId || assessorStat.assessedBy;
       byAssessor[key] = {
         count: assessorStat.count,
-        accuracyRate: assessorStat.count > 0 
-          ? assessorStat.correctCount / assessorStat.count 
+        accuracyRate: assessorStat.count > 0
+          ? assessorStat.correctCount / assessorStat.count
           : 0,
       };
     }
-    
+
     const total = stats.totalAssessments || 0;
-    
+
     return {
       totalAssessments: total,
       correctCount: stats.correctCount || 0,
@@ -147,18 +148,18 @@ export class AssessmentRepository extends BaseRepository {
       byAssessor,
     };
   }
-  
+
   /**
    * Delete assessments by IDs
    */
   async deleteByIds(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
-    
+
     await this.db
       .delete(assessments)
       .where(inArray(assessments.id, ids));
   }
-  
+
   /**
    * Update an assessment
    */
@@ -168,10 +169,10 @@ export class AssessmentRepository extends BaseRepository {
       .set(data)
       .where(eq(assessments.id, id))
       .returning();
-    
+
     return updated || null;
   }
-  
+
   /**
    * Check if a run has been assessed
    */
@@ -180,7 +181,7 @@ export class AssessmentRepository extends BaseRepository {
       .select({ count: sql<number>`count(*)` })
       .from(assessments)
       .where(eq(assessments.runId, runId));
-    
+
     return result.count > 0;
   }
 }

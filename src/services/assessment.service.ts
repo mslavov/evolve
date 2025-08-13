@@ -87,7 +87,7 @@ export class AssessmentService {
    */
   async buildDataset(params: BuildDatasetParams = {}): Promise<{
     added: number;
-    skipped: number;
+    filtered: number;
     version: string;
   }> {
     // Get all runs and filter for those with assessments
@@ -104,14 +104,14 @@ export class AssessmentService {
     
     const version = params.version || `v${Date.now()}`;
     let added = 0;
-    let skipped = 0;
+    let filtered = 0; // Count of runs filtered out (no assessments, low confidence, or sampling)
     
     for (const run of runs) {
       // Get assessments for this run (we know it has assessments from filtering above)
       const assessments = await this.assessmentRepo.findByRunId(run.id);
       
       if (assessments.length === 0) {
-        skipped++;
+        filtered++;
         continue;
       }
       
@@ -124,13 +124,13 @@ export class AssessmentService {
       }
       
       if (validAssessments.length === 0) {
-        skipped++;
+        filtered++;
         continue;
       }
       
       // Apply sampling rate
       if (params.samplingRate && Math.random() > params.samplingRate) {
-        skipped++;
+        filtered++;
         continue;
       }
       
@@ -153,7 +153,7 @@ export class AssessmentService {
       added++;
     }
     
-    return { added, skipped, version };
+    return { added, filtered, version };
   }
   
   /**
@@ -189,18 +189,12 @@ export class AssessmentService {
   }
   
   /**
-   * Mark runs as skipped for assessment
+   * Get runs pending assessment
    */
-  async skipRuns(runIds: string[]): Promise<void> {
-    // Note: Since runs don't have assessment status field,
-    // we're using the absence of assessment records to indicate skipped status
-    // In the future, we could add metadata to runs or create a separate tracking table
-    for (const runId of runIds) {
-      // For now, we just log that these runs are being skipped
-      // The absence of assessment records will indicate they were skipped
-      console.log(`Marking run ${runId} as skipped for assessment`);
-    }
+  async getPendingRuns(limit?: number) {
+    return this.runRepo.findPending(limit);
   }
+  
   
   /**
    * Clear dataset by version or split

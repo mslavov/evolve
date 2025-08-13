@@ -43,7 +43,7 @@ function createBuildCommand() {
         
         spinner.succeed('Dataset built successfully!');
         console.log(chalk.green(`\n✅ Added ${result.added} records`));
-        console.log(chalk.yellow(`⚠️  Skipped ${result.skipped} records`));
+        console.log(chalk.yellow(`⚠️  Filtered ${result.filtered} records`));
         console.log(chalk.gray(`Version: ${result.version}`));
       } catch (error) {
         spinner.fail('Failed to build dataset');

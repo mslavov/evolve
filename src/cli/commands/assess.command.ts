@@ -4,6 +4,9 @@ import ora from 'ora';
 import { AssessmentService } from '../../services/assessment.service.js';
 import { AgentService } from '../../services/agent.service.js';
 import { getDatabase } from '../../db/client.js';
+import { writeFileSync, readFileSync } from 'fs';
+import { parse } from 'csv-parse/sync';
+import { z } from 'zod';
 
 export function createAssessCommand() {
   const command = new Command('assess');
@@ -13,7 +16,8 @@ export function createAssessCommand() {
     .addCommand(createAddAssessmentCommand())
     .addCommand(createListPendingCommand())
     .addCommand(createStatsCommand())
-    .addCommand(createSkipCommand());
+    .addCommand(createExportCommand())
+    .addCommand(createImportCommand());
   
   return command;
 }
@@ -134,22 +138,148 @@ function createStatsCommand() {
     });
 }
 
-function createSkipCommand() {
-  return new Command('skip')
-    .description('Skip runs for assessment')
-    .argument('<runIds...>', 'Run IDs to skip')
-    .action(async (runIds) => {
-      const spinner = ora('Marking runs as skipped...').start();
+function createExportCommand() {
+  return new Command('export')
+    .description('Export pending runs or datasets for assessment')
+    .option('-o, --output <file>', 'Output file path', 'assessment-export.csv')
+    .option('-t, --type <type>', 'Export type: pending|dataset', 'pending')
+    .option('--version <version>', 'Dataset version to export')
+    .option('--split <split>', 'Dataset split to export (train/validation/test)')
+    .option('--limit <limit>', 'Maximum number of records to export', parseInt)
+    .action(async (options) => {
+      const spinner = ora('Exporting data...').start();
       
       try {
         const db = getDatabase();
         const assessmentService = new AssessmentService(db);
         
-        await assessmentService.skipRuns(runIds);
+        let csvContent = '';
         
-        spinner.succeed(`Marked ${runIds.length} runs as skipped`);
+        if (options.type === 'pending') {
+          // Export pending runs for assessment
+          const pendingRuns = await assessmentService.getPendingRuns(options.limit);
+          
+          csvContent = 'runId,agentId,input,output,metadata\n';
+          for (const run of pendingRuns) {
+            const metadata = JSON.stringify(run.metadata || {});
+            const outputStr = typeof run.output === 'string' ? run.output : JSON.stringify(run.output);
+            csvContent += `"${run.id}","${run.agentId}","${run.input.replace(/"/g, '""')}","${outputStr.replace(/"/g, '""')}","${metadata.replace(/"/g, '""')}"\n`;
+          }
+          
+          spinner.succeed(`Exported ${pendingRuns.length} pending runs to ${options.output}`);
+        } else if (options.type === 'dataset') {
+          // Export dataset for training/evaluation
+          const result = await assessmentService.exportDataset({
+            version: options.version,
+            split: options.split,
+          });
+          
+          // Check if result is a string (JSONL format) or object with records
+          if (typeof result === 'string') {
+            // JSONL format
+            writeFileSync(options.output, result);
+            const lineCount = result.split('\n').filter(line => line.trim()).length;
+            spinner.succeed(`Exported ${lineCount} dataset records to ${options.output}`);
+            console.log(chalk.green(`✓ Data exported to ${options.output}`));
+            return;
+          }
+          
+          const { records } = result;
+          csvContent = 'id,input,correctedScore,verdict,datasetType,metadata\n';
+          for (const record of records) {
+            const metadata = JSON.stringify(record.metadata || {});
+            csvContent += `"${record.id}","${record.input}",${record.correctedScore},"${record.verdict}","${record.datasetType}","${metadata.replace(/"/g, '""')}"\n`;
+          }
+          
+          spinner.succeed(`Exported ${records.length} dataset records to ${options.output}`);
+        } else {
+          throw new Error('Invalid export type. Use "pending" or "dataset"');
+        }
+        
+        writeFileSync(options.output, csvContent);
+        console.log(chalk.green(`✓ Data exported to ${options.output}`));
+        
       } catch (error) {
-        spinner.fail('Failed to skip runs');
+        spinner.fail('Failed to export data');
+        console.error(chalk.red('Error:'), error);
+        process.exit(1);
+      }
+    });
+}
+
+function createImportCommand() {
+  return new Command('import')
+    .description('Import assessments from CSV file')
+    .argument('<file>', 'CSV file to import')
+    .option('--dry-run', 'Preview import without making changes')
+    .action(async (file, options) => {
+      const spinner = ora('Importing assessments...').start();
+      
+      try {
+        const db = getDatabase();
+        const assessmentService = new AssessmentService(db);
+        
+        // Read and parse CSV
+        const csvContent = readFileSync(file, 'utf-8');
+        const records = parse(csvContent, {
+          columns: true,
+          skip_empty_lines: true,
+        });
+        
+        // Define schema for assessment records
+        const assessmentSchema = z.object({
+          runId: z.string().min(1),
+          verdict: z.enum(['correct', 'incorrect']),
+          correctedScore: z.coerce.number().min(0).max(1).optional(),
+          reasoning: z.string().optional(),
+          confidence: z.coerce.number().min(0).max(1).optional(),
+          assessorId: z.string().optional(),
+        });
+        
+        let imported = 0;
+        let skipped = 0;
+        const errors: string[] = [];
+        
+        for (const [index, record] of records.entries()) {
+          try {
+            const validated = assessmentSchema.parse(record);
+            
+            if (!options.dryRun) {
+              await assessmentService.addAssessment({
+                runId: validated.runId,
+                verdict: validated.verdict,
+                correctedScore: validated.correctedScore,
+                reasoning: validated.reasoning,
+                confidence: validated.confidence,
+                assessorId: validated.assessorId,
+                assessedBy: 'human',
+              });
+            }
+            
+            imported++;
+            spinner.text = `Processing... (${imported} imported, ${skipped} skipped)`;
+          } catch (error) {
+            skipped++;
+            errors.push(`Row ${index + 2}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+        
+        spinner.succeed(`Import completed: ${imported} assessments imported, ${skipped} skipped`);
+        
+        if (options.dryRun) {
+          console.log(chalk.yellow('\nDry run mode - no changes were made'));
+        }
+        
+        if (errors.length > 0) {
+          console.log(chalk.yellow('\nErrors encountered:'));
+          errors.slice(0, 10).forEach(error => console.log(chalk.yellow(`  - ${error}`)));
+          if (errors.length > 10) {
+            console.log(chalk.yellow(`  ... and ${errors.length - 10} more errors`));
+          }
+        }
+        
+      } catch (error) {
+        spinner.fail('Failed to import assessments');
         console.error(chalk.red('Error:'), error);
         process.exit(1);
       }

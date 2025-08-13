@@ -7,6 +7,7 @@ export const agents = sqliteTable('agents', {
   
   // Agent identity
   name: text('name').notNull(),
+  version: integer('version').notNull().default(1),
   type: text('type', { 
     enum: ['system', 'user', 'scorer', 'evaluator', 'optimizer', 'researcher', 'generator', 'classifier', 'extractor', 'summarizer', 'translator'] 
   }).notNull().default('user'),

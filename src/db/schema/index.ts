@@ -3,6 +3,7 @@ export * from './assessments';
 export * from './eval-datasets';
 export * from './prompts';
 export * from './agents';
+export * from './agent-versions';
 
 // Re-export relations
 import { relations } from 'drizzle-orm';
@@ -10,6 +11,7 @@ import { runs } from './runs';
 import { assessments } from './assessments';
 import { evalDatasets } from './eval-datasets';
 import { agents } from './agents';
+import { agentVersions } from './agent-versions';
 
 // Define relationships
 export const runsRelations = relations(runs, ({ one, many }) => ({
@@ -46,4 +48,12 @@ export const evalDatasetsRelations = relations(evalDatasets, ({ one }) => ({
 
 export const agentsRelations = relations(agents, ({ many }) => ({
   runs: many(runs),
+  versions: many(agentVersions),
+}));
+
+export const agentVersionsRelations = relations(agentVersions, ({ one }) => ({
+  agent: one(agents, {
+    fields: [agentVersions.agentId],
+    references: [agents.id],
+  }),
 }));

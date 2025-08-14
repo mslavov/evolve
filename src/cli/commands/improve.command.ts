@@ -8,164 +8,129 @@ export function createImproveCommand() {
   const command = new Command('improve');
   
   command
-    .description('Improve scorer performance')
-    .addCommand(createOptimizeCommand())
-    .addCommand(createEvaluateCommand())
-    .addCommand(createAnalyzeCommand());
+    .description('Improve agent performance through iterative optimization')
+    .argument('<agent-key>', 'Agent key to improve')
+    .option('--target-score <n>', 'Target score to achieve', parseFloat, 0.9)
+    .option('--max-iterations <n>', 'Maximum number of iterations', parseInt, 10)
+    .option('--strategy <name>', 'Evaluation strategy to use')
+    .option('--enable-research', 'Enable research-driven improvements')
+    .option('--verbose', 'Enable verbose output')
+    .option('--explore', 'Run grid search optimization instead of iterative optimization')
+    .option('--models <models>', 'Comma-separated list of models to test (explore mode only)')
+    .option('--temperatures <temps>', 'Comma-separated list of temperatures (explore mode only)')
+    .option('--prompts <versions>', 'Comma-separated list of prompt versions (explore mode only)')
+    .option('--sample-size <n>', 'Number of samples to test (explore mode only)', parseInt)
+    .action(async (agentKey, options) => {
+      if (options.explore) {
+        await runGridSearchOptimization(agentKey, options);
+      } else {
+        await runIterativeOptimization(agentKey, options);
+      }
+    });
   
   return command;
 }
 
-function createOptimizeCommand() {
-  return new Command('optimize')
-    .description('Optimize configuration through testing')
-    .argument('<baseConfig>', 'Base configuration key')
-    .option('--models <models>', 'Comma-separated list of models to test')
-    .option('--temperatures <temps>', 'Comma-separated list of temperatures')
-    .option('--prompts <versions>', 'Comma-separated list of prompt versions')
-    .option('--test-version <version>', 'Test dataset version')
-    .option('--sample-size <n>', 'Number of samples to test', parseInt)
-    .action(async (baseConfig, options) => {
-      const spinner = ora('Running optimization...').start();
-      
-      try {
-        const db = getDatabase();
-        const improvementService = new ImprovementService(db);
-        
-        const variations = {
-          models: options.models?.split(','),
-          temperatures: options.temperatures?.split(',').map(parseFloat),
-          promptIds: options.prompts?.split(','),
-        };
-        
-        const result = await improvementService.optimizeConfiguration({
-          baseAgentKey: baseConfig,
-          variations,
-          testDataVersion: options.testVersion,
-          sampleSize: options.sampleSize,
-        });
-        
-        spinner.succeed('Optimization complete!');
-        
-        console.log(chalk.cyan('\n🎯 Optimization Results:\n'));
-        console.log(chalk.green('Best Agent:'));
-        console.log(`  Key: ${result.bestAgent.key}`);
-        console.log(`  Model: ${result.bestAgent.model}`);
-        console.log(`  Temperature: ${result.bestAgent.temperature}`);
-        console.log(`  Prompt ID: ${result.bestAgent.promptId}`);
-        
-        console.log('\n📊 Performance Comparison:');
-        for (const [idx, res] of result.results.entries()) {
-          const marker = idx === 0 ? chalk.green('★') : ' ';
-          console.log(`${marker} Config ${idx + 1}:`);
-          console.log(`    Model: ${res.agent.model}`);
-          console.log(`    Temp: ${res.agent.temperature}`);
-          console.log(`    RMSE: ${chalk.yellow(res.rmse.toFixed(4))}`);
-          console.log(`    Avg Score: ${res.score.toFixed(3)}`);
-        }
-        
-        console.log('\n💡 ' + chalk.cyan('Recommendation:'));
-        console.log(result.recommendation);
-      } catch (error) {
-        spinner.fail('Optimization failed');
-        console.error(chalk.red('Error:'), error);
-        process.exit(1);
-      }
+async function runIterativeOptimization(agentKey: string, options: any) {
+  const spinner = ora('Running iterative optimization...').start();
+  
+  try {
+    const db = getDatabase();
+    const improvementService = new ImprovementService(db);
+    
+    const result = await improvementService.runIterativeOptimization({
+      baseAgentKey: agentKey,
+      targetScore: options.targetScore,
+      maxIterations: options.maxIterations,
+      evaluationStrategy: options.strategy,
+      enableResearch: options.enableResearch,
+      verbose: options.verbose,
     });
+    
+    spinner.succeed('Iterative optimization complete!');
+    
+    console.log(chalk.cyan('\n🎯 Optimization Results:\n'));
+    
+    if (result.finalAgent) {
+      console.log(chalk.green('Final Agent:'));
+      console.log(`  Key: ${result.finalAgent.key}`);
+      console.log(`  Model: ${result.finalAgent.model}`);
+      console.log(`  Temperature: ${result.finalAgent.temperature}`);
+      console.log(`  Final Score: ${chalk.yellow(result.finalScore?.toFixed(3) || 'N/A')}`);
+    }
+    
+    if (result.iterations && result.iterations.length > 0) {
+      console.log('\n📊 Iteration History:');
+      for (const [idx, iteration] of result.iterations.entries()) {
+        console.log(`  Iteration ${idx + 1}: Score ${iteration.score?.toFixed(3) || 'N/A'}`);
+        if (iteration.improvements && iteration.improvements.length > 0) {
+          console.log(`    Improvements: ${iteration.improvements.join(', ')}`);
+        }
+      }
+    }
+    
+    if (result.converged) {
+      console.log(chalk.green('\n✅ Optimization converged successfully!'));
+    } else if (result.reason) {
+      console.log(chalk.yellow(`\n⚠️  Optimization stopped: ${result.reason}`));
+    }
+    
+    if (result.recommendations && result.recommendations.length > 0) {
+      console.log('\n💡 ' + chalk.cyan('Recommendations:'));
+      for (const recommendation of result.recommendations) {
+        console.log(`  • ${recommendation}`);
+      }
+    }
+  } catch (error) {
+    spinner.fail('Iterative optimization failed');
+    console.error(chalk.red('Error:'), error);
+    process.exit(1);
+  }
 }
 
-function createEvaluateCommand() {
-  return new Command('evaluate')
-    .description('Evaluate agent performance')
-    .argument('<agent>', 'Agent key to evaluate')
-    .action(async (agentKey: string) => {
-      const spinner = ora('Running evaluation...').start();
-      
-      try {
-        const db = getDatabase();
-        const improvementService = new ImprovementService(db);
-        
-        const result = await improvementService.evaluateCurrentConfig(agentKey);
-        
-        spinner.succeed('Evaluation complete!');
-        
-        console.log(chalk.cyan('\n📊 Evaluation Results:\n'));
-        
-        console.log('📈 Metrics:');
-        console.log(`  Average Score: ${chalk.yellow(result.metrics.averageScore.toFixed(3))}`);
-        console.log(`  Average Error: ${chalk.yellow(result.metrics.averageError.toFixed(3))}`);
-        console.log(`  RMSE: ${chalk.yellow(result.metrics.rmse.toFixed(4))}`);
-        console.log(`  Samples: ${result.metrics.samplesEvaluated}`);
-        
-        if (result.strengths.length > 0) {
-          console.log('\n✅ Strengths:');
-          for (const strength of result.strengths) {
-            console.log(`  • ${strength}`);
-          }
-        }
-        
-        if (result.weaknesses.length > 0) {
-          console.log('\n⚠️  Weaknesses:');
-          for (const weakness of result.weaknesses) {
-            console.log(`  • ${weakness}`);
-          }
-        }
-      } catch (error) {
-        spinner.fail('Evaluation failed');
-        console.error(chalk.red('Error:'), error);
-        process.exit(1);
-      }
+async function runGridSearchOptimization(agentKey: string, options: any) {
+  const spinner = ora('Running grid search optimization...').start();
+  
+  try {
+    const db = getDatabase();
+    const improvementService = new ImprovementService(db);
+    
+    const variations = {
+      models: options.models?.split(','),
+      temperatures: options.temperatures?.split(',').map(parseFloat),
+      promptIds: options.prompts?.split(','),
+    };
+    
+    const result = await improvementService.optimizeConfiguration({
+      baseAgentKey: agentKey,
+      variations,
+      sampleSize: options.sampleSize,
     });
-}
-
-function createAnalyzeCommand() {
-  return new Command('analyze')
-    .description('Analyze prompt performance')
-    .argument('<promptVersion>', 'Prompt version to analyze')
-    .option('--target <version>', 'Target prompt version for comparison')
-    .option('--depth <level>', 'Analysis depth (basic/detailed)', 'basic')
-    .action(async (promptVersion, options) => {
-      const spinner = ora('Analyzing prompt performance...').start();
-      
-      try {
-        const db = getDatabase();
-        const improvementService = new ImprovementService(db);
-        
-        const analysis = await improvementService.analyzePromptPerformance({
-          currentVersion: promptVersion,
-          targetVersion: options.target || promptVersion,
-          analysisDepth: options.depth,
-        });
-        
-        spinner.succeed('Analysis complete!');
-        
-        console.log(chalk.cyan('\n📊 Prompt Analysis:\n'));
-        
-        console.log('Current Performance:');
-        console.log(`  Total Records: ${analysis.currentPerformance.totalRecords}`);
-        console.log(`  Average Score: ${analysis.currentPerformance.averageScore?.toFixed(3) || 'N/A'}`);
-        console.log(`  RMSE: ${analysis.currentPerformance.rmse?.toFixed(4) || 'N/A'}`);
-        
-        if (analysis.suggestions.length > 0) {
-          console.log('\n💡 Suggestions:');
-          for (const suggestion of analysis.suggestions) {
-            console.log(`  • ${suggestion}`);
-          }
-        }
-        
-        if (analysis.examples.length > 0) {
-          console.log('\n📝 Problem Examples:');
-          for (const example of analysis.examples) {
-            console.log(`\n  Input: "${example.input}"`);
-            console.log(`  Current Score: ${chalk.yellow(example.currentScore.toFixed(2))}`);
-            console.log(`  Expected Score: ${chalk.green(example.expectedScore.toFixed(2))}`);
-            console.log(`  Issue: ${chalk.red(example.issue)}`);
-          }
-        }
-      } catch (error) {
-        spinner.fail('Analysis failed');
-        console.error(chalk.red('Error:'), error);
-        process.exit(1);
-      }
-    });
+    
+    spinner.succeed('Grid search optimization complete!');
+    
+    console.log(chalk.cyan('\n🎯 Grid Search Results:\n'));
+    console.log(chalk.green('Best Agent:'));
+    console.log(`  Key: ${result.bestAgent.key}`);
+    console.log(`  Model: ${result.bestAgent.model}`);
+    console.log(`  Temperature: ${result.bestAgent.temperature}`);
+    console.log(`  Prompt ID: ${result.bestAgent.promptId}`);
+    
+    console.log('\n📊 Performance Comparison:');
+    for (const [idx, res] of result.results.entries()) {
+      const marker = idx === 0 ? chalk.green('★') : ' ';
+      console.log(`${marker} Config ${idx + 1}:`);
+      console.log(`    Model: ${res.agent.model}`);
+      console.log(`    Temp: ${res.agent.temperature}`);
+      console.log(`    RMSE: ${chalk.yellow(res.rmse.toFixed(4))}`);
+      console.log(`    Avg Score: ${res.score.toFixed(3)}`);
+    }
+    
+    console.log('\n💡 ' + chalk.cyan('Recommendation:'));
+    console.log(result.recommendation);
+  } catch (error) {
+    spinner.fail('Grid search optimization failed');
+    console.error(chalk.red('Error:'), error);
+    process.exit(1);
+  }
 }

@@ -303,8 +303,9 @@ export class ImprovementService {
     }
 
     // Filter for runs with the current prompt
+    // The prompt version is stored in configSnapshot
     const versionRuns = currentRuns.filter(
-      r => r.configPromptVersion === params.currentVersion
+      r => r.configSnapshot?.promptId === params.currentVersion
     );
 
     // Get ground truth data from eval datasets
@@ -318,10 +319,15 @@ export class ImprovementService {
         const groundTruth = evalData.find(
           e => e.input === run.input
         );
+        // Extract score from output (could be object with score property or direct number)
+        const outputScore = typeof run.output === 'object' && run.output?.score !== undefined
+          ? run.output.score
+          : (typeof run.output === 'number' ? run.output : 0);
+        
         return groundTruth ? {
           run,
           groundTruth: groundTruth.correctedScore,
-          error: run.outputScore - groundTruth.correctedScore
+          error: outputScore - groundTruth.correctedScore
         } : null;
       })
       .filter(Boolean) as Array<{
@@ -339,12 +345,19 @@ export class ImprovementService {
     const problems = matched
       .filter(m => Math.abs(m.error) > 0.2)
       .slice(0, 5)
-      .map(m => ({
-        input: m.run.input.substring(0, 100) + '...',
-        currentScore: m.run.outputScore,
-        expectedScore: m.groundTruth,
-        issue: this.identifyIssue(m.error),
-      }));
+      .map(m => {
+        // Extract score from output (same logic as above)
+        const outputScore = typeof m.run.output === 'object' && m.run.output?.score !== undefined
+          ? m.run.output.score
+          : (typeof m.run.output === 'number' ? m.run.output : 0);
+        
+        return {
+          input: m.run.input.substring(0, 100) + '...',
+          currentScore: outputScore,
+          expectedScore: m.groundTruth,
+          issue: this.identifyIssue(m.error),
+        };
+      });
 
     // Create performance stats
     const currentStats = {
@@ -380,7 +393,13 @@ export class ImprovementService {
   /**
    * Run evaluation on a specific agent
    */
-  async evaluateAgent(agentKey: string): Promise<{
+  async evaluateAgent(
+    agentKey: string,
+    options?: {
+      datasetVersion?: string;
+      limit?: number;
+    }
+  ): Promise<{
     metrics: any;
     weaknesses: string[];
     strengths: string[];
@@ -391,10 +410,11 @@ export class ImprovementService {
       throw new Error(`Agent '${agentKey}' not found`);
     }
 
-    // Get test dataset
+    // Get test dataset with configurable options
     const testData = await this.evalDatasetRepo.findMany({
       split: 'test',
-      limit: 50,
+      version: options?.datasetVersion,
+      limit: options?.limit ?? 50,
     });
 
     if (testData.length === 0) {

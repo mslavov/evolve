@@ -129,8 +129,14 @@ pnpm cli dataset build
 
 #### 4. Optimize Your Agent
 ```bash
-# Run iterative optimization
-pnpm cli improve optimize myagent --iterations 10 --target 0.9
+# Run iterative improvement (automated flow)
+pnpm cli improve myagent --iterations 10 --target 0.9
+
+# Run parameter exploration
+pnpm cli improve myagent --explore --iterations 5
+
+# Evaluate agent performance
+pnpm cli eval myagent
 
 # View optimization history
 pnpm cli improve stats
@@ -225,8 +231,8 @@ pnpm cli run "Your content" --output-file results.json
 # Run with ground truth collection
 pnpm cli run "Your content" --collect
 
-# Evaluate current configuration
-pnpm improve evaluate
+# Evaluate agent performance
+pnpm cli eval myagent
 ```
 
 ### Assessment & Dataset Management
@@ -282,14 +288,17 @@ pnpm cli agent delete myagent
 ### Optimization
 
 ```bash
-# Run basic optimization
-pnpm improve optimize baseconfig
+# Run iterative improvement (automated flow)
+pnpm cli improve myagent --iterations 10 --target 0.9
 
-# Run iterative optimization (new!)
-pnpm improve optimize baseconfig --iterations 10 --target 0.9
+# Run parameter exploration
+pnpm cli improve myagent --explore --iterations 5
+
+# Evaluate agent performance
+pnpm cli eval myagent
 
 # Analyze prompt performance
-pnpm improve analyze v1
+pnpm cli improve analyze v1
 ```
 
 ## 🧪 Evaluation Strategies

@@ -38,8 +38,14 @@ pnpm cli run "Your content" --agent <agent-key>
 pnpm cli assess pending
 pnpm cli dataset build
 
-# Run optimization
-pnpm cli improve optimize <agent-key> --iterations 10
+# Run iterative improvement (automated flow)
+pnpm cli improve <agent-key> --iterations 10 --target 0.9
+
+# Run parameter exploration  
+pnpm cli improve <agent-key> --explore --iterations 5
+
+# Evaluate agent performance
+pnpm cli eval <agent-key>
 ```
 
 #### Database Operations
@@ -126,3 +132,12 @@ evolve/
 - Agent keys are required for all operations (no default agent concept)
 - All agents have versioning support with history tracking
 - The optimization process is iterative and research-driven
+
+## CLI Command Updates (v2.0)
+The CLI has been streamlined for better user experience:
+- **OLD**: `pnpm cli improve optimize <agent-key>` 
+- **NEW**: `pnpm cli improve <agent-key>` (runs automated improvement flow)
+- **NEW**: `pnpm cli improve <agent-key> --explore` (parameter exploration mode)
+- **NEW**: `pnpm cli eval <agent-key>` (dedicated evaluation command)
+
+The new structure provides a more intuitive workflow with automated optimization flows and clearer command separation.

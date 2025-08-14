@@ -8,6 +8,7 @@ import { createAssessCommand } from './commands/assess.command.js';
 import { createDatasetCommand } from './commands/dataset.command.js';
 import { createAgentCommand } from './commands/agent.command.js';
 import { createImproveCommand } from './commands/improve.command.js';
+import { createEvalCommand } from './commands/eval.command.js';
 import { promptCommand } from './commands/prompt.command.js';
 import { migrateCommand } from './commands/migrate.command.js';
 import { closeDatabase } from '../db/client.js';
@@ -83,6 +84,7 @@ program
   .addCommand(createDatasetCommand())
   .addCommand(createAgentCommand())
   .addCommand(createImproveCommand())
+  .addCommand(createEvalCommand())
   .addCommand(promptCommand)
   .addCommand(migrateCommand);
 

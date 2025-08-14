@@ -19,7 +19,6 @@ export interface AssessmentStats {
   correctCount: number;
   incorrectCount: number;
   accuracyRate: number;
-  averageCorrection: number;
   byAssessor: Record<string, {
     count: number;
     accuracyRate: number;
@@ -110,7 +109,6 @@ export class AssessmentRepository extends BaseRepository {
         totalAssessments: sql<number>`count(*)`,
         correctCount: sql<number>`sum(case when ${assessments.verdict} = 'correct' then 1 else 0 end)`,
         incorrectCount: sql<number>`sum(case when ${assessments.verdict} = 'incorrect' then 1 else 0 end)`,
-        avgCorrection: sql<number>`avg(case when ${assessments.verdict} = 'incorrect' and ${assessments.correctedScore} is not null then abs(${assessments.correctedScore} - 0.5) else null end)`,
       })
       .from(assessments);
 
@@ -144,7 +142,6 @@ export class AssessmentRepository extends BaseRepository {
       correctCount: stats.correctCount || 0,
       incorrectCount: stats.incorrectCount || 0,
       accuracyRate: total > 0 ? (stats.correctCount || 0) / total : 0,
-      averageCorrection: stats.avgCorrection || 0,
       byAssessor,
     };
   }

@@ -19,7 +19,7 @@ import {
 export interface AddAssessmentParams {
   runId: string;
   verdict: 'correct' | 'incorrect';
-  correctedScore?: number;
+  expectedOutput?: any;
   reasoning?: string;
   assessedBy?: 'human' | 'llm' | 'consensus';
   assessorId?: string;
@@ -66,7 +66,7 @@ export class AssessmentService {
     const assessmentData: NewAssessment = {
       runId: params.runId,
       verdict: params.verdict,
-      correctedScore: params.correctedScore,
+      expectedOutput: params.expectedOutput ? JSON.stringify(params.expectedOutput) : undefined,
       reasoning: params.reasoning,
       assessedBy: params.assessedBy || 'human',
       assessorId: params.assessorId,
@@ -207,12 +207,12 @@ export class AssessmentService {
     if (options.format === 'jsonl') {
       return records.map(r => JSON.stringify({
         input: r.input,
-        groundTruth: r.correctedScore,
-        reasoning: r.metadata.reasoning,
+        expectedOutput: r.expectedOutput,
+        reasoning: r.metadata?.reasoning,
         metadata: {
           id: r.id,
-          source: r.metadata.source,
-          quality: r.metadata.quality,
+          source: r.metadata?.source,
+          quality: r.metadata?.quality,
         },
       })).join('\n');
     }
@@ -292,11 +292,8 @@ export class AssessmentService {
       runId: run.id,
       assessmentId: assessment.id,
       input: run.input,
-      expectedOutput: determineExpectedOutput(run),
+      expectedOutput: assessment.expectedOutput || determineExpectedOutput(run),
       agentOutput: formatOutputForDataset(run.output),
-      correctedScore: assessment.verdict === 'correct' 
-        ? undefined 
-        : assessment.correctedScore,
       verdict: assessment.verdict,
       datasetType: 'evaluation',
       datasetVersion: options.version,

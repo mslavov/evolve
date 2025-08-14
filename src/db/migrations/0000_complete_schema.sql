@@ -128,7 +128,7 @@ CREATE TABLE `assessments` (
 	`id` text PRIMARY KEY NOT NULL,
 	`run_id` text NOT NULL,
 	`verdict` text NOT NULL,
-	`corrected_score` real,
+	`expected_output` text,
 	`reasoning` text,
 	`assessed_by` text DEFAULT 'human' NOT NULL,
 	`assessor_id` text,
@@ -151,7 +151,6 @@ CREATE TABLE `eval_datasets` (
 	`input` text NOT NULL,
 	`expected_output` text NOT NULL,
 	`agent_output` text NOT NULL,
-	`corrected_score` real,
 	`verdict` text NOT NULL,
 	`dataset_type` text DEFAULT 'evaluation' NOT NULL,
 	`dataset_version` text,
@@ -438,6 +437,77 @@ VALUES
     'structured',
     json('{"type": "object", "properties": {"verdict": {"type": "string", "enum": ["correct", "incorrect"]}, "confidence": {"type": "number"}, "reasoning": {"type": "string"}, "correctedScore": {"type": "number"}, "issues": {"type": "array"}}}'),
     'System agent for assessing run quality and correctness',
+    1,
+    1,
+    unixepoch(),
+    unixepoch()
+  );
+
+-- Insert LLM Judge prompt
+INSERT INTO prompts (id, version, name, description, template, is_active, is_production, metadata, created_at, updated_at)
+VALUES
+  (
+    'llm_judge_v1_id',
+    'llm_judge_v1',
+    'LLM Output Judge',
+    'Evaluates similarity between actual and expected outputs',
+    'You are an expert evaluator comparing AI agent outputs.
+
+Input will be provided as JSON: {"actual": <actual_output>, "expected": <expected_output>}
+
+Task: Evaluate how similar the actual output is to the expected output.
+
+Instructions:
+1. Compare the semantic meaning, not just literal text
+2. Consider if the actual output fulfills the same purpose as expected
+3. For structured data, check if key information is present
+4. Provide a similarity score from 0.0 (completely different) to 1.0 (identical/equivalent)
+
+Output format (JSON):
+{
+  "similarity": <0.0 to 1.0>,
+  "reasoning": "<2-3 sentences explaining the score>"
+}',
+    1,
+    1,
+    json('{"systemPrompt": true, "type": "evaluator"}'),
+    unixepoch(),
+    unixepoch()
+  );
+
+-- Insert LLM Judge system agent
+INSERT INTO agents (
+  id,
+  key,
+  name,
+  version,
+  type,
+  model,
+  temperature,
+  max_tokens,
+  prompt_id,
+  output_type,
+  output_schema,
+  description,
+  is_active,
+  is_system_agent,
+  created_at,
+  updated_at
+)
+VALUES
+  (
+    'agent_llm_judge_id',
+    'system_llm_judge',
+    'LLM Output Judge',
+    1,
+    'evaluator',
+    'gpt-4o-mini',
+    0.1,
+    500,
+    'llm_judge_v1',
+    'structured',
+    '{"type":"object","properties":{"similarity":{"type":"number","minimum":0,"maximum":1},"reasoning":{"type":"string"}},"required":["similarity","reasoning"]}',
+    'System agent for evaluating output similarity using LLM',
     1,
     1,
     unixepoch(),

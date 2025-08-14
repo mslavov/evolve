@@ -19,7 +19,6 @@ export interface DatasetStats {
   bySplit: Record<string, number>;
   bySource: Record<string, number>;
   byQuality: Record<string, number>;
-  averageScore: number;
   versions: string[];
 }
 
@@ -53,13 +52,8 @@ export class EvalDatasetRepository extends BaseRepository {
     // SQL filters on JSON fields are limited in SQLite
     // We'll do post-query filtering for these
     
-    if (filters?.minScore !== undefined) {
-      conditions.push(gte(evalDatasets.correctedScore, filters.minScore));
-    }
-    
-    if (filters?.maxScore !== undefined) {
-      conditions.push(lte(evalDatasets.correctedScore, filters.maxScore));
-    }
+    // Score filtering removed - expectedOutput is JSON and complex to filter
+    // Consider implementing post-query filtering if needed
     
     const baseQuery = this.db.select().from(evalDatasets);
     
@@ -133,7 +127,6 @@ export class EvalDatasetRepository extends BaseRepository {
     const statsQuery = await this.db
       .select({
         totalRecords: sql<number>`count(*)`,
-        avgScore: sql<number>`avg(${evalDatasets.correctedScore})`,
       })
       .from(evalDatasets);
     
@@ -178,7 +171,6 @@ export class EvalDatasetRepository extends BaseRepository {
       bySplit,
       bySource,
       byQuality,
-      averageScore: stats.avgScore || 0,
       versions,
     };
   }
@@ -224,12 +216,8 @@ export class EvalDatasetRepository extends BaseRepository {
     conditions.push(sql`${evalDatasets.deletedAt} IS NULL`);
     
     // Apply filters
-    if (options.filters?.minScore !== undefined) {
-      conditions.push(gte(evalDatasets.correctedScore, options.filters.minScore));
-    }
-    if (options.filters?.maxScore !== undefined) {
-      conditions.push(lte(evalDatasets.correctedScore, options.filters.maxScore));
-    }
+    // Score filtering removed - expectedOutput is JSON and complex to filter
+    // Consider implementing post-query filtering if needed
     
     // Apply cursor for pagination
     if (options.cursor) {

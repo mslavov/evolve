@@ -10,9 +10,8 @@ export const evalDatasets = sqliteTable('eval_datasets', {
   
   // Data fields
   input: text('input').notNull(),
-  expectedOutput: text('expected_output').notNull(),
+  expectedOutput: text('expected_output', { mode: 'json' }).$type<any>().notNull(),
   agentOutput: text('agent_output').notNull(),
-  correctedScore: real('corrected_score'),
   verdict: text('verdict').notNull(),
   
   // Dataset metadata

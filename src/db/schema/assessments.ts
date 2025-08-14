@@ -8,7 +8,7 @@ export const assessments = sqliteTable('assessments', {
   
   // Assessment verdict
   verdict: text('verdict', { enum: ['correct', 'incorrect'] }).notNull(),
-  correctedScore: real('corrected_score'),
+  expectedOutput: text('expected_output', { mode: 'json' }).$type<any>(),
   reasoning: text('reasoning'),
   
   // Metadata

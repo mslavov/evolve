@@ -144,14 +144,22 @@ export class PromptService {
       // Extract score from output
       const score = typeof result.output === 'object' && result.output.score !== undefined 
         ? result.output.score 
-        : 0;
+        : (typeof result.output === 'number' ? result.output : 0);
       
-      const error = Math.abs(score - data.correctedScore);
+      // Parse expected output
+      const expected = typeof data.expectedOutput === 'string' 
+        ? JSON.parse(data.expectedOutput)
+        : data.expectedOutput;
+      const expectedScore = typeof expected === 'number' 
+        ? expected 
+        : (expected?.score !== undefined ? expected.score : 0);
+      
+      const error = Math.abs(score - expectedScore);
       totalError += error;
       totalSquaredError += error * error;
       
       predictions.push(score);
-      actuals.push(data.correctedScore);
+      actuals.push(expectedScore);
     }
     
     const mae = totalError / testData.length;

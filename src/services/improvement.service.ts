@@ -6,6 +6,7 @@ import { PromptService, type PromptGenerationStrategy } from './prompt.service.j
 import { AgentService } from './agent.service.js';
 import type { Agent, NewAgent } from '../db/schema/agents.js';
 import type { EvalDataset } from '../db/schema/eval-datasets.js';
+import { OutputEvaluator } from './evaluation/output-evaluator.js';
 
 // New orchestration imports
 import { FlowOrchestrator, type FlowConfig } from './orchestration/flow.orchestrator.js';
@@ -286,8 +287,8 @@ export class ImprovementService {
     suggestions: string[];
     examples: Array<{
       input: string;
-      currentScore: number;
-      expectedScore: number;
+      currentOutput: any;
+      expectedOutput: any;
       issue: string;
     }>;
   }> {
@@ -316,23 +317,43 @@ export class ImprovementService {
     // Match runs with ground truth data
     const matched = versionRuns
       .map(run => {
-        const groundTruth = evalData.find(
+        const evalDataEntry = evalData.find(
           e => e.input === run.input
         );
-        // Extract score from output (could be object with score property or direct number)
-        const outputScore = typeof run.output === 'object' && run.output?.score !== undefined
-          ? run.output.score
-          : (typeof run.output === 'number' ? run.output : 0);
         
-        return groundTruth ? {
+        if (!evalDataEntry) return null;
+        
+        // Parse expected output
+        const expected = typeof evalDataEntry.expectedOutput === 'string'
+          ? JSON.parse(evalDataEntry.expectedOutput)
+          : evalDataEntry.expectedOutput;
+        
+        // Extract numeric value for comparison (if applicable)
+        const outputValue = typeof run.output === 'object' && run.output?.score !== undefined
+          ? run.output.score
+          : (typeof run.output === 'number' ? run.output : run.output);
+        
+        const expectedValue = typeof expected === 'number' 
+          ? expected 
+          : (expected?.score !== undefined ? expected.score : expected);
+        
+        // Calculate simple difference for numeric values, or 0/1 for match/mismatch
+        let error = 0;
+        if (typeof outputValue === 'number' && typeof expectedValue === 'number') {
+          error = outputValue - expectedValue;
+        } else {
+          error = JSON.stringify(outputValue) === JSON.stringify(expectedValue) ? 0 : 1;
+        }
+        
+        return {
           run,
-          groundTruth: groundTruth.correctedScore,
-          error: outputScore - groundTruth.correctedScore
-        } : null;
+          expected: expectedValue,
+          error
+        };
       })
       .filter(Boolean) as Array<{
         run: any;
-        groundTruth: number;
+        expected: any;
         error: number;
       }>;
 
@@ -346,15 +367,15 @@ export class ImprovementService {
       .filter(m => Math.abs(m.error) > 0.2)
       .slice(0, 5)
       .map(m => {
-        // Extract score from output (same logic as above)
-        const outputScore = typeof m.run.output === 'object' && m.run.output?.score !== undefined
+        // Extract output value (same logic as above)
+        const outputValue = typeof m.run.output === 'object' && m.run.output?.score !== undefined
           ? m.run.output.score
-          : (typeof m.run.output === 'number' ? m.run.output : 0);
+          : (typeof m.run.output === 'number' ? m.run.output : m.run.output);
         
         return {
           input: m.run.input.substring(0, 100) + '...',
-          currentScore: outputScore,
-          expectedScore: m.groundTruth,
+          currentOutput: outputValue,
+          expectedOutput: m.expected,
           issue: this.identifyIssue(m.error),
         };
       });
@@ -492,8 +513,11 @@ export class ImprovementService {
     agent: Partial<NewAgent> | Agent,
     testData: EvalDataset[]
   ): Promise<{ score: number; error: number; rmse: number }> {
-    let totalScore = 0;
-    let totalError = 0;
+    // Infer output type from schema
+    const outputType = OutputEvaluator.inferOutputType(agent);
+    const evaluator = new OutputEvaluator(this.agentService);
+    
+    let totalSimilarity = 0;
     let totalSquaredError = 0;
     let count = 0;
 
@@ -528,15 +552,17 @@ export class ImprovementService {
           { agentKey }
         );
 
-        // Extract score from output
-        const score = typeof result.output === 'object' && result.output.score !== undefined
-          ? result.output.score
-          : 0;
+        // Parse expected output (it's stored as JSON in the DB)
+        const expected = typeof data.expectedOutput === 'string' 
+          ? JSON.parse(data.expectedOutput)
+          : data.expectedOutput;
 
-        const error = score - data.correctedScore;
-
-        totalScore += score;
-        totalError += error;
+        // Compare using appropriate evaluator
+        const comparison = await evaluator.compare(result.output, expected, outputType);
+        
+        // comparison.similarity is normalized [0-1]
+        totalSimilarity += comparison.similarity;
+        const error = 1 - comparison.similarity;
         totalSquaredError += error * error;
         count++;
       }
@@ -550,8 +576,8 @@ export class ImprovementService {
     if (count === 0) return { score: 0, error: 0, rmse: 0 };
 
     return {
-      score: totalScore / count,
-      error: totalError / count,
+      score: totalSimilarity / count,
+      error: (count - totalSimilarity) / count, // Average error
       rmse: Math.sqrt(totalSquaredError / count),
     };
   }
@@ -565,6 +591,10 @@ export class ImprovementService {
   ): Promise<{ weaknesses: string[]; strengths: string[] }> {
     const weaknesses: string[] = [];
     const strengths: string[] = [];
+    
+    // Initialize evaluator for comparison
+    const outputType = OutputEvaluator.inferOutputType(agent);
+    const evaluator = new OutputEvaluator(this.agentService);
 
     // Group errors by content type
     const errorsByType: Record<string, number[]> = {};
@@ -575,12 +605,16 @@ export class ImprovementService {
         { agentKey: agent.key }
       );
 
-      // Extract score from output
-      const score = typeof result.output === 'object' && result.output.score !== undefined
-        ? result.output.score
-        : 0;
-      const error = Math.abs(score - data.correctedScore);
-      const type = data.metadata.inputType || 'general';
+      // Parse expected output
+      const expected = typeof data.expectedOutput === 'string' 
+        ? JSON.parse(data.expectedOutput)
+        : data.expectedOutput;
+
+      // Compare outputs
+      const comparison = await evaluator.compare(result.output, expected, outputType);
+      const error = 1 - comparison.similarity; // Error is distance from perfect match
+      
+      const type = data.metadata?.inputType || 'general';
 
       if (!errorsByType[type]) errorsByType[type] = [];
       errorsByType[type].push(error);
@@ -597,21 +631,38 @@ export class ImprovementService {
       }
     }
 
-    // Analyze by score range
-    const lowScoreErrors = testData
-      .filter(d => d.correctedScore < 0.3)
-      .length;
+    // Analyze by expected output characteristics
+    // For numeric outputs, we can analyze score ranges
+    const lowScoreCount = testData.filter(d => {
+      try {
+        const expected = typeof d.expectedOutput === 'string' 
+          ? JSON.parse(d.expectedOutput) 
+          : d.expectedOutput;
+        const numValue = typeof expected === 'number' ? expected : expected?.score;
+        return numValue !== undefined && numValue < 0.3;
+      } catch {
+        return false;
+      }
+    }).length;
 
-    const highScoreErrors = testData
-      .filter(d => d.correctedScore > 0.7)
-      .length;
+    const highScoreCount = testData.filter(d => {
+      try {
+        const expected = typeof d.expectedOutput === 'string' 
+          ? JSON.parse(d.expectedOutput) 
+          : d.expectedOutput;
+        const numValue = typeof expected === 'number' ? expected : expected?.score;
+        return numValue !== undefined && numValue > 0.7;
+      } catch {
+        return false;
+      }
+    }).length;
 
-    if (lowScoreErrors > testData.length * 0.3) {
-      weaknesses.push('Struggles with low-quality content identification');
+    if (lowScoreCount > testData.length * 0.3) {
+      weaknesses.push('May struggle with low-score content identification');
     }
 
-    if (highScoreErrors > testData.length * 0.3) {
-      weaknesses.push('Overscores content (too generous)');
+    if (highScoreCount > testData.length * 0.3) {
+      weaknesses.push('May overscore content (too generous)');
     }
 
     return { weaknesses, strengths };

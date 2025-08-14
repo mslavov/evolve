@@ -216,8 +216,22 @@ export function generateDatasetTags(
     tags.push(`type:${run.runType}`);
   }
   
-  // Add score range tag
-  const score = assessment.correctedScore ?? extractScoreFromOutput(run.output);
+  // Add score range tag (extract from expectedOutput if available)
+  let score: number | undefined;
+  if (assessment.expectedOutput) {
+    try {
+      const expected = typeof assessment.expectedOutput === 'string' 
+        ? JSON.parse(assessment.expectedOutput) 
+        : assessment.expectedOutput;
+      score = typeof expected === 'number' ? expected : expected?.score;
+    } catch {
+      // Fallback to extracting from run output
+      score = extractScoreFromOutput(run.output);
+    }
+  } else {
+    score = extractScoreFromOutput(run.output);
+  }
+  
   if (score !== undefined) {
     if (score >= 0.8) {
       tags.push('high-score');

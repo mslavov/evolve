@@ -69,7 +69,6 @@ async function importCsv(options: ImportOptions) {
           input: validated.input_content,
           expectedOutput: JSON.stringify({ score: validated.ground_truth_score }),
           agentOutput: JSON.stringify({ score: validated.ground_truth_score }),
-          correctedScore: validated.ground_truth_score,
           verdict: 'correct',
           runId: 'import_' + index,
           assessmentId: 'import_assess_' + index,
@@ -136,11 +135,18 @@ async function importCsv(options: ImportOptions) {
     console.log(chalk.cyan('Version:'), options.version || 'imported');
     console.log(chalk.cyan('Split:'), options.split || 'train');
     
-    // Calculate score distribution
-    const scores = validRecords.map(r => r.correctedScore);
-    const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
-    const minScore = Math.min(...scores);
-    const maxScore = Math.max(...scores);
+    // Calculate score distribution (extract from expectedOutput)
+    const scores = validRecords.map(r => {
+      try {
+        const expected = JSON.parse(r.expectedOutput);
+        return typeof expected === 'number' ? expected : expected?.score || 0;
+      } catch {
+        return 0;
+      }
+    });
+    const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+    const minScore = scores.length > 0 ? Math.min(...scores) : 0;
+    const maxScore = scores.length > 0 ? Math.max(...scores) : 0;
     
     console.log('\n📈 Score Distribution:');
     console.log(chalk.cyan('Average:'), avgScore.toFixed(3));

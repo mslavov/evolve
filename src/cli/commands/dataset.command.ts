@@ -109,7 +109,6 @@ function createStatsCommand() {
         
         console.log(chalk.cyan('\n📊 Dataset Statistics:\n'));
         console.log(`Total Records: ${chalk.yellow(stats.totalRecords)}`);
-        console.log(`Average Score: ${chalk.yellow(stats.averageScore.toFixed(3))}`);
         
         if (Object.keys(stats.bySplit).length > 0) {
           console.log('\n📂 By Split:');

@@ -202,8 +202,8 @@ export class AgentService {
       agentId: agent.id,
       parentRunId: options?.parentRunId,
       input: typeof input === 'string' ? input : JSON.stringify(input, null, 2),
-      output: parsedOutput,
-      rawOutput: result.content,
+      output: typeof parsedOutput === 'string' ? parsedOutput : JSON.stringify(parsedOutput),
+      rawOutput: typeof result.content === 'string' ? result.content : JSON.stringify(result.content),
       configSnapshot: {
         model: agent.model,
         temperature: agent.temperature,

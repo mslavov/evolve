@@ -27,7 +27,7 @@ function createAddAssessmentCommand() {
     .description('Add an assessment for a run')
     .argument('<runId>', 'Run ID to assess')
     .argument('<verdict>', 'Assessment verdict (correct/incorrect)')
-    .option('-s, --score <score>', 'Corrected score if incorrect', parseFloat)
+    .option('-o, --output <output>', 'Expected output if incorrect (JSON string)')
     .option('-r, --reasoning <text>', 'Reasoning for the assessment')
     .option('--assessor <id>', 'Assessor ID')
     .option('--confidence <value>', 'Confidence level (0-1)', parseFloat)
@@ -45,7 +45,7 @@ function createAddAssessmentCommand() {
         const assessmentId = await assessmentService.addAssessment({
           runId,
           verdict,
-          correctedScore: options.score,
+          expectedOutput: options.output ? JSON.parse(options.output) : undefined,
           reasoning: options.reasoning,
           assessorId: options.assessor,
           confidence: options.confidence,
@@ -118,11 +118,7 @@ function createStatsCommand() {
         console.log(`Total Assessments: ${chalk.yellow(stats.totalAssessments)}`);
         console.log(`Correct: ${chalk.green(stats.correctCount)}`);
         console.log(`Incorrect: ${chalk.red(stats.incorrectCount)}`);
-        console.log(`Accuracy Rate: ${chalk.yellow((stats.accuracyRate * 100).toFixed(1) + '%')}`);
-        
-        if (stats.averageCorrection > 0) {
-          console.log(`Average Correction: ${chalk.yellow(stats.averageCorrection.toFixed(3))}`);
-        }
+        console.log(`Accuracy Rate: ${chalk.yellow((stats.accuracyRate * 100).toFixed(1) + '%')}`)
         
         if (Object.keys(stats.byAssessor).length > 0) {
           console.log('\n👥 By Assessor:');
@@ -185,10 +181,11 @@ function createExportCommand() {
           }
           
           const { records } = result;
-          csvContent = 'id,input,correctedScore,verdict,datasetType,metadata\n';
+          csvContent = 'id,input,expectedOutput,verdict,datasetType,metadata\n';
           for (const record of records) {
             const metadata = JSON.stringify(record.metadata || {});
-            csvContent += `"${record.id}","${record.input}",${record.correctedScore},"${record.verdict}","${record.datasetType}","${metadata.replace(/"/g, '""')}"\n`;
+            const expectedOutput = JSON.stringify(record.expectedOutput || {});
+            csvContent += `"${record.id}","${record.input}","${expectedOutput.replace(/"/g, '""')}","${record.verdict}","${record.datasetType}","${metadata.replace(/"/g, '""')}"\n`;
           }
           
           spinner.succeed(`Exported ${records.length} dataset records to ${options.output}`);
@@ -230,7 +227,7 @@ function createImportCommand() {
         const assessmentSchema = z.object({
           runId: z.string().min(1),
           verdict: z.enum(['correct', 'incorrect']),
-          correctedScore: z.coerce.number().min(0).max(1).optional(),
+          expectedOutput: z.any().optional(),
           reasoning: z.string().optional(),
           confidence: z.coerce.number().min(0).max(1).optional(),
           assessorId: z.string().optional(),
@@ -248,7 +245,7 @@ function createImportCommand() {
               await assessmentService.addAssessment({
                 runId: validated.runId,
                 verdict: validated.verdict,
-                correctedScore: validated.correctedScore,
+                expectedOutput: validated.expectedOutput,
                 reasoning: validated.reasoning,
                 confidence: validated.confidence,
                 assessorId: validated.assessorId,

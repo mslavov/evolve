@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
-import { ImprovementService } from '../../services/improvement.service.js';
+import { EvaluationService } from '../../services/evaluation.service.js';
 import { getDatabase } from '../../db/client.js';
 
 export function createEvalCommand() {
@@ -20,7 +20,7 @@ export function createEvalCommand() {
       
       try {
         const db = getDatabase();
-        const improvementService = new ImprovementService(db);
+        const evaluationService = new EvaluationService(db);
         
         // Show configuration if verbose
         if (options.verbose) {
@@ -34,7 +34,7 @@ export function createEvalCommand() {
           spinner.start('Running evaluation...');
         }
         
-        const result = await improvementService.evaluateAgent(agentKey, {
+        const result = await evaluationService.evaluateAgent(agentKey, {
           datasetVersion: options.dataset,
           limit: options.limit,
         });

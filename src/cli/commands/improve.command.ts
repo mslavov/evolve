@@ -20,6 +20,8 @@ export function createImproveCommand() {
     .option('--temperatures <temps>', 'Comma-separated list of temperatures (explore mode only)')
     .option('--prompts <versions>', 'Comma-separated list of prompt versions (explore mode only)')
     .option('--sample-size <n>', 'Number of samples to test (explore mode only)', parseInt)
+    .option('--max-budget <amount>', 'Maximum budget in USD (default: $10)', parseFloat, 10.00)
+    .option('--no-budget', 'Disable budget enforcement (dangerous!)')
     .action(async (agentKey, options) => {
       if (options.explore) {
         await runGridSearchOptimization(agentKey, options);
@@ -38,7 +40,20 @@ async function runIterativeOptimization(agentKey: string, options: any) {
     const db = getDatabase();
     const improvementService = new ImprovementService(db);
     
+    // Listen for progress events
+    improvementService.on('progress', (event: any) => {
+      if (event.data?.message) {
+        spinner.text = event.data.message;
+      }
+    });
+    
+    improvementService.on('budget_alert', (alert: any) => {
+      spinner.warn(`Budget alert: ${alert.message}`);
+      spinner.start('Continuing optimization...');
+    });
+    
     const result = await improvementService.runIterativeOptimization({
+      ...options,  // Pass budget options through
       baseAgentKey: agentKey,
       targetScore: options.targetScore,
       maxIterations: options.maxIterations,
@@ -95,6 +110,19 @@ async function runGridSearchOptimization(agentKey: string, options: any) {
     const db = getDatabase();
     const improvementService = new ImprovementService(db);
     
+    // Listen for progress events
+    improvementService.on('progress', (event: any) => {
+      if (event.type === 'grid_progress' && event.data) {
+        const { current, total, bestScore } = event.data;
+        spinner.text = `Testing configuration ${current}/${total} - Best score: ${bestScore?.toFixed(3) || 'N/A'}`;
+      }
+    });
+    
+    improvementService.on('budget_alert', (alert: any) => {
+      spinner.warn(`Budget alert: ${alert.message}`);
+      spinner.start('Continuing grid search...');
+    });
+    
     const variations = {
       models: options.models?.split(','),
       temperatures: options.temperatures?.split(',').map(parseFloat),
@@ -102,6 +130,7 @@ async function runGridSearchOptimization(agentKey: string, options: any) {
     };
     
     const result = await improvementService.optimizeConfiguration({
+      ...options,  // Pass budget options through
       baseAgentKey: agentKey,
       variations,
       sampleSize: options.sampleSize,

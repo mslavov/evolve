@@ -1,5 +1,7 @@
 import { Database } from '../db/client.js';
 import { AgentRepository } from '../repositories/agent.repository.js';
+import { EvalDatasetRepository } from '../repositories/eval-dataset.repository.js';
+import { EvaluationService } from './evaluation.service.js';
 import { FlowOrchestrator, type FlowConfig } from './orchestration/flow.orchestrator.js';
 import { EvaluationRegistry } from './evaluation/registry.js';
 import { NumericScoreEvaluator } from './evaluation/strategies/numeric-score.strategy.js';
@@ -217,6 +219,8 @@ export interface IterativeOptimizationResult {
  */
 export class IterativeOptimizationService {
   private agentRepo: AgentRepository;
+  private evalDatasetRepo: EvalDatasetRepository;
+  private evaluationService: EvaluationService;
   private evaluationRegistry: EvaluationRegistry;
   private flowOrchestrator: FlowOrchestrator;
   // Removed pattern memory - over-engineered
@@ -241,8 +245,10 @@ export class IterativeOptimizationService {
     adaptationWindow: 3,
   };
 
-  constructor(db: Database) {
+  constructor(private db: Database) {
     this.agentRepo = new AgentRepository(db);
+    this.evalDatasetRepo = new EvalDatasetRepository(db);
+    this.evaluationService = new EvaluationService(db);
     this.evaluationRegistry = new EvaluationRegistry();
     this.setupEvaluationStrategies();
     this.flowOrchestrator = new FlowOrchestrator(db, this.evaluationRegistry);
@@ -541,25 +547,38 @@ export class IterativeOptimizationService {
   ): Promise<Record<string, number>> {
     const scores: Record<string, number> = {};
 
-    for (const objective of objectives) {
-      try {
-        // Use appropriate evaluation strategy for each objective
-        const strategy = objective.evaluationStrategy || 'numeric-score';
-        const evaluator = this.evaluationRegistry.get(strategy);
-        
-        if (evaluator) {
-          // This is a simplified evaluation - in practice, you'd need to run the agent
-          // against test data specific to each objective
-          const evaluation = await evaluator.evaluate([], [], { feedbackDetail: 'standard' });
-          scores[objective.id] = evaluation.score;
-        } else {
-          console.warn(`Evaluation strategy '${strategy}' not found for objective '${objective.id}'`);
-          scores[objective.id] = 0;
-        }
-      } catch (error) {
-        console.error(`Error evaluating objective '${objective.id}':`, error);
+    // Get test dataset for evaluation
+    const testData = await this.evalDatasetRepo.findMany({
+      limit: 50, // Use a reasonable sample size for iterative optimization
+    });
+
+    if (testData.length === 0) {
+      console.warn('No test data available for evaluation');
+      for (const objective of objectives) {
         scores[objective.id] = 0;
       }
+      return scores;
+    }
+
+    // For now, use the same test for all objectives
+    // In the future, could have objective-specific datasets
+    const testResult = await this.evaluationService.testAgentConfiguration(
+      {
+        model: config.model,
+        temperature: config.temperature,
+        promptId: config.promptId,
+        maxTokens: config.maxTokens,
+        outputType: config.outputType,
+        outputSchema: config.outputSchema,
+      },
+      testData,
+      { agentKey: config.key }
+    );
+
+    // Map the single score to all objectives for now
+    // In the future, could have objective-specific scoring
+    for (const objective of objectives) {
+      scores[objective.id] = testResult.metrics.score;
     }
 
     return scores;

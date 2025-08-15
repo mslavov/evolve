@@ -1,8 +1,43 @@
 import { Database } from '../db/client.js';
 import { AgentRepository } from '../repositories/agent.repository.js';
 import { EvalDatasetRepository } from '../repositories/eval-dataset.repository.js';
-import { GridSearchService, type GridSearchParams, type TestResult } from './grid-search.service.js';
-import type { Agent } from '../db/schema/agents.js';
+import { AgentService } from './agent.service.js';
+import { OutputEvaluator } from './evaluation/output-evaluator.js';
+import type { Agent, NewAgent } from '../db/schema/agents.js';
+import type { EvalDataset } from '../db/schema/eval-datasets.js';
+
+/**
+ * Single test result for a dataset item
+ */
+export interface SampleResult {
+  input: string;
+  expected: any;
+  actual: any;
+  similarity: number;
+  error: number;
+}
+
+/**
+ * Test result for an agent configuration
+ */
+export interface TestResult {
+  /** Agent configuration that was tested */
+  config: Partial<NewAgent>;
+  
+  /** Performance metrics */
+  metrics: {
+    score: number; // average similarity score (0-1)
+    error: number; // average error rate
+    rmse: number; // root mean squared error
+    sampleCount: number;
+  };
+  
+  /** Test duration in milliseconds */
+  duration: number;
+  
+  /** Individual sample results (for detailed analysis) */
+  sampleResults?: SampleResult[];
+}
 
 /**
  * Evaluation result with detailed metrics and analysis
@@ -28,29 +63,144 @@ export interface EvaluationResult {
     temperature: number;
     promptId: string;
   };
+  /** Detailed sample results if requested */
+  sampleResults?: SampleResult[];
 }
 
 /**
- * EvaluationService - Dedicated service for evaluating agent performance
+ * EvaluationService - Core service for evaluating agent performance
  * 
- * This service provides comprehensive evaluation capabilities:
- * - Agent performance evaluation against test datasets
- * - Strength and weakness analysis
- * - Performance tracking and metrics
+ * This is the foundational service for all agent testing and evaluation.
+ * Other services (GridSearch, IterativeOptimization) use this for testing.
  */
 export class EvaluationService {
   private agentRepo: AgentRepository;
   private evalDatasetRepo: EvalDatasetRepository;
-  private gridSearchService: GridSearchService;
+  private agentService: AgentService;
+  private outputEvaluator: OutputEvaluator;
 
   constructor(private db: Database) {
     this.agentRepo = new AgentRepository(db);
     this.evalDatasetRepo = new EvalDatasetRepository(db);
-    this.gridSearchService = new GridSearchService(db);
+    this.agentService = new AgentService(db);
+    this.outputEvaluator = new OutputEvaluator(this.agentService);
   }
 
   /**
-   * Evaluate an agent's performance against test data
+   * Core method: Test an agent configuration against a dataset
+   * This is the fundamental testing method used by all other services
+   */
+  async testAgentConfiguration(
+    config: Partial<NewAgent>,
+    dataset: EvalDataset[],
+    options?: {
+      includeDetails?: boolean;
+      agentKey?: string; // Use existing agent if provided
+    }
+  ): Promise<TestResult> {
+    const startTime = Date.now();
+    const outputType = OutputEvaluator.inferOutputType(config);
+    const sampleResults: SampleResult[] = [];
+    
+    let totalSimilarity = 0;
+    let totalSquaredError = 0;
+
+    // Use existing agent or create temporary one
+    let agentKey = options?.agentKey;
+    let tempAgent: Agent | null = null;
+
+    if (!agentKey) {
+      // Create a temporary agent for testing
+      const tempKey = `temp_eval_${Date.now()}_${Math.random()}`;
+      tempAgent = await this.agentRepo.create({
+        key: tempKey,
+        name: 'Temporary Evaluation Agent',
+        type: config.type || 'scorer',
+        model: config.model || 'gpt-4o-mini',
+        temperature: config.temperature ?? 0.3,
+        maxTokens: config.maxTokens || 1000,
+        promptId: config.promptId || 'v1',
+        outputType: config.outputType || 'structured',
+        outputSchema: config.outputSchema,
+        description: 'Temporary agent for evaluation',
+      });
+      agentKey = tempAgent.key;
+    }
+
+    try {
+      // Test each sample
+      for (const data of dataset) {
+        try {
+          // Run the agent
+          const result = await this.agentService.run(data.input, { 
+            agentKey
+          });
+
+          // Parse expected output
+          const expected = typeof data.expectedOutput === 'string' 
+            ? JSON.parse(data.expectedOutput)
+            : data.expectedOutput;
+
+          // Compare outputs
+          const comparison = await this.outputEvaluator.compare(result.output, expected, outputType);
+          
+          totalSimilarity += comparison.similarity;
+          const error = 1 - comparison.similarity;
+          totalSquaredError += error * error;
+
+          // Store sample result
+          if (options?.includeDetails) {
+            sampleResults.push({
+              input: data.input.substring(0, 100) + (data.input.length > 100 ? '...' : ''),
+              expected,
+              actual: result.output,
+              similarity: comparison.similarity,
+              error,
+            });
+          }
+
+        } catch (error) {
+          console.warn(`Failed to test sample: ${error}`);
+          // Add failed sample with 0 score
+          totalSquaredError += 1; // Maximum error for failed cases
+          if (options?.includeDetails) {
+            sampleResults.push({
+              input: data.input.substring(0, 100) + (data.input.length > 100 ? '...' : ''),
+              expected: data.expectedOutput,
+              actual: null,
+              similarity: 0,
+              error: 1,
+            });
+          }
+        }
+      }
+    } finally {
+      // Clean up temporary agent if created
+      if (tempAgent) {
+        await this.agentRepo.deleteByKey(tempAgent.key);
+      }
+    }
+
+    const count = dataset.length;
+    const avgScore = count > 0 ? totalSimilarity / count : 0;
+    const avgError = count > 0 ? (count - totalSimilarity) / count : 0;
+    const rmse = count > 0 ? Math.sqrt(totalSquaredError / count) : 0;
+
+    return {
+      config,
+      metrics: {
+        score: avgScore,
+        error: avgError,
+        rmse,
+        sampleCount: count,
+      },
+      duration: Date.now() - startTime,
+      sampleResults: options?.includeDetails ? sampleResults : undefined,
+    };
+  }
+
+  /**
+   * Evaluate an existing agent's performance
    */
   async evaluateAgent(
     agentKey: string,
@@ -58,6 +208,7 @@ export class EvaluationService {
       datasetVersion?: string;
       limit?: number;
       split?: 'train' | 'validation' | 'test';
+      includeDetails?: boolean;
     }
   ): Promise<EvaluationResult> {
     const agent = await this.agentRepo.findByKey(agentKey);
@@ -66,7 +217,6 @@ export class EvaluationService {
     }
 
     // Get test data for evaluation
-    // Note: Current database doesn't have proper split metadata, so we just get any available data
     const testData = await this.evalDatasetRepo.findMany({
       version: options?.datasetVersion,
       limit: options?.limit ?? 50,
@@ -76,21 +226,22 @@ export class EvaluationService {
       throw new Error(`No ${options?.split || 'test'} data available for evaluation`);
     }
 
-    // Use grid search service for evaluation with a dummy variation
-    // GridSearchService requires at least one variation, so we pass the current config
-    const evalParams: GridSearchParams = {
-      baseAgentKey: agentKey,
-      variations: {
-        models: [agent.model], // Use current model as the only "variation"
+    // Test the agent configuration
+    const result = await this.testAgentConfiguration(
+      {
+        model: agent.model,
+        temperature: agent.temperature,
+        promptId: agent.promptId,
+        maxTokens: agent.maxTokens,
+        outputType: agent.outputType,
+        outputSchema: agent.outputSchema,
       },
-      dataset: {
-        limit: testData.length,
-        version: options?.datasetVersion
-      },
-    };
-
-    const gridResult = await this.gridSearchService.runGridSearch(evalParams);
-    const result = gridResult.results[0]; // Single result since only one configuration
+      testData,
+      {
+        includeDetails: options?.includeDetails,
+        agentKey: agent.key, // Use existing agent
+      }
+    );
 
     // Update agent's performance metrics
     await this.agentRepo.updatePerformanceMetrics(agent.key, result.metrics.score);
@@ -114,6 +265,7 @@ export class EvaluationService {
         temperature: agent.temperature,
         promptId: agent.promptId,
       },
+      sampleResults: result.sampleResults,
     };
   }
 

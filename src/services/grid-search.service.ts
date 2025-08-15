@@ -2,8 +2,7 @@ import { EventEmitter } from 'events';
 import { Database } from '../db/client.js';
 import { AgentRepository } from '../repositories/agent.repository.js';
 import { EvalDatasetRepository } from '../repositories/eval-dataset.repository.js';
-import { AgentService } from './agent.service.js';
-import { OutputEvaluator } from './evaluation/output-evaluator.js';
+import { EvaluationService } from './evaluation.service.js';
 import type { Agent, NewAgent } from '../db/schema/agents.js';
 import type { EvalDataset } from '../db/schema/eval-datasets.js';
 
@@ -131,15 +130,13 @@ export interface ProgressEvent {
 export class GridSearchService extends EventEmitter {
   private agentRepo: AgentRepository;
   private evalDatasetRepo: EvalDatasetRepository;
-  private agentService: AgentService;
-  private outputEvaluator: OutputEvaluator;
+  private evaluationService: EvaluationService;
 
   constructor(db: Database) {
     super();
     this.agentRepo = new AgentRepository(db);
     this.evalDatasetRepo = new EvalDatasetRepository(db);
-    this.agentService = new AgentService(db);
-    this.outputEvaluator = new OutputEvaluator(this.agentService);
+    this.evaluationService = new EvaluationService(db);
   }
 
   /**
@@ -422,91 +419,19 @@ export class GridSearchService extends EventEmitter {
     params: GridSearchParams,
     startTime: number
   ): Promise<TestResult> {
-    const outputType = OutputEvaluator.inferOutputType(config);
-    const sampleResults: TestResult['sampleResults'] = [];
-    
-    let totalSimilarity = 0;
-    let totalSquaredError = 0;
-
-    // Create a temporary agent for testing
-    const tempKey = `temp_grid_search_${Date.now()}_${Math.random()}`;
-    const tempAgent = await this.agentRepo.create({
-      key: tempKey,
-      name: 'Temporary Grid Search Agent',
-      type: 'scorer',
-      model: config.model || 'gpt-4o-mini',
-      temperature: config.temperature || 0.3,
-      maxTokens: config.maxTokens || 1000,
-      promptId: config.promptId || 'v1',
-      outputType: config.outputType || 'structured',
-      outputSchema: config.outputSchema,
-      description: 'Temporary agent for grid search testing',
-    });
-
-    try {
-      // Test each sample
-      for (const data of dataset) {
-        try {
-          // Run the agent
-          const result = await this.agentService.run(data.input, { 
-            agentKey: tempAgent.key
-          });
-
-          // Parse expected output
-          const expected = typeof data.expectedOutput === 'string' 
-            ? JSON.parse(data.expectedOutput)
-            : data.expectedOutput;
-
-          // Compare outputs
-          const comparison = await this.outputEvaluator.compare(result.output, expected, outputType);
-          
-          totalSimilarity += comparison.similarity;
-          const error = 1 - comparison.similarity;
-          totalSquaredError += error * error;
-
-          // Store sample result for detailed analysis
-          sampleResults.push({
-            input: data.input.substring(0, 100) + '...',
-            expected,
-            actual: result.output,
-            similarity: comparison.similarity,
-            error,
-          });
-
-        } catch (error) {
-          console.warn(`Failed to test sample: ${error}`);
-          // Add failed sample with 0 score
-          totalSquaredError += 1; // Maximum error for failed cases
-          sampleResults.push({
-            input: data.input.substring(0, 100) + '...',
-            expected: data.expectedOutput,
-            actual: null,
-            similarity: 0,
-            error: 1,
-          });
-        }
-      }
-    } finally {
-      // Clean up the temporary agent
-      await this.agentRepo.deleteByKey(tempAgent.key);
-    }
-
-    const count = dataset.length;
-    const avgScore = count > 0 ? totalSimilarity / count : 0;
-    const avgError = count > 0 ? (count - totalSimilarity) / count : 0;
-    const rmse = count > 0 ? Math.sqrt(totalSquaredError / count) : 0;
+    // Use the EvaluationService to test the configuration
+    const testResult = await this.evaluationService.testAgentConfiguration(
+      config,
+      dataset,
+      { includeDetails: true }
+    );
 
     return {
       config,
-      metrics: {
-        score: avgScore,
-        error: avgError,
-        rmse,
-        sampleCount: count,
-      },
+      metrics: testResult.metrics,
       estimatedCost: this.estimateConfigCost(config, dataset.length, params),
-      duration: Date.now() - startTime,
-      sampleResults,
+      duration: testResult.duration,
+      sampleResults: testResult.sampleResults,
     };
   }
 

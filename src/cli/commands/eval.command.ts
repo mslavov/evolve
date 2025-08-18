@@ -3,6 +3,9 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { EvaluationService } from '../../services/evaluation.service.js';
 import { getDatabase } from '../../db/client.js';
+import { createLogger } from '../../utils/logger.js';
+
+const logger = createLogger('EvalCommand') as any;
 
 export function createEvalCommand() {
   return new Command('eval')
@@ -16,11 +19,25 @@ export function createEvalCommand() {
     .option('--good-score <n>', 'Score threshold for good performance (default: 0.7)', parseFloat)
     .option('--good-rmse <n>', 'RMSE threshold for good performance (default: 0.2)', parseFloat)
     .action(async (agentKey: string, options) => {
+      logger.info('Starting evaluation command', {
+        agentKey,
+        options: {
+          dataset: options.dataset,
+          verbose: options.verbose,
+          limit: options.limit,
+          poorScore: options.poorScore,
+          poorRmse: options.poorRmse,
+          goodScore: options.goodScore,
+          goodRmse: options.goodRmse,
+        },
+      });
+      
       const spinner = ora('Running evaluation...').start();
       
       try {
         const db = getDatabase();
         const evaluationService = new EvaluationService(db);
+        logger.debug('Database and evaluation service initialized');
         
         // Show configuration if verbose
         if (options.verbose) {
@@ -34,9 +51,21 @@ export function createEvalCommand() {
           spinner.start('Running evaluation...');
         }
         
+        logger.debug('Calling evaluateAgent', {
+          agentKey,
+          datasetVersion: options.dataset,
+          limit: options.limit,
+        });
+        
         const result = await evaluationService.evaluateAgent(agentKey, {
           datasetVersion: options.dataset,
           limit: options.limit,
+        });
+        
+        logger.info('Evaluation completed successfully', {
+          metrics: result.metrics,
+          strengthsCount: result.strengths.length,
+          weaknessesCount: result.weaknesses.length,
         });
         
         spinner.succeed('Evaluation complete!');
@@ -87,20 +116,42 @@ export function createEvalCommand() {
         
         // Exit with non-zero code if performance is poor (for CI/CD)
         if (avgScore < poorScoreThreshold || rmse > poorRmseThreshold) {
+          logger.warn('Performance below recommended thresholds', {
+            avgScore,
+            rmse,
+            poorScoreThreshold,
+            poorRmseThreshold,
+          });
           console.log(chalk.yellow('\n⚠️  Performance below recommended thresholds'));
           console.log(chalk.gray(`   Score: ${avgScore.toFixed(3)} < ${poorScoreThreshold} or RMSE: ${rmse.toFixed(4)} > ${poorRmseThreshold}`));
           console.log(chalk.gray('   Consider running optimization or reviewing agent configuration'));
           process.exit(1);
         } else if (avgScore < goodScoreThreshold || rmse > goodRmseThreshold) {
+          logger.info('Performance is acceptable but could be improved', {
+            avgScore,
+            rmse,
+            goodScoreThreshold,
+            goodRmseThreshold,
+          });
           console.log(chalk.yellow('\n📊 Performance is acceptable but could be improved'));
           console.log(chalk.gray(`   Score: ${avgScore.toFixed(3)} < ${goodScoreThreshold} or RMSE: ${rmse.toFixed(4)} > ${goodRmseThreshold}`));
           process.exit(0);
         } else {
+          logger.info('Excellent performance!', {
+            avgScore,
+            rmse,
+          });
           console.log(chalk.green('\n🎯 Excellent performance!'));
           process.exit(0);
         }
         
       } catch (error) {
+        logger.error('Evaluation failed', {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          agentKey,
+        });
+        
         spinner.fail('Evaluation failed');
         console.error(chalk.red('Error:'), error);
         

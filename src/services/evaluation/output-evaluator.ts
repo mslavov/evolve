@@ -1,5 +1,9 @@
-import type { AgentService } from '../agent.service.js';
 import type { Agent } from '../../db/schema/agents.js';
+import { Database } from '../../db/client.js';
+import { LLMJudgeAgent } from '../../agents/index.js';
+import { createLogger } from '../../utils/logger.js';
+
+const logger = createLogger('OutputEvaluator') as any;
 
 export interface OutputComparison {
   similarity: number; // 0-1 normalized score
@@ -7,10 +11,11 @@ export interface OutputComparison {
 }
 
 export class OutputEvaluator {
-  constructor(
-    private agentService: AgentService,
-    private llmJudgeKey: string = 'system_llm_judge'
-  ) {}
+  private llmJudgeAgent: LLMJudgeAgent;
+  
+  constructor(db: Database) {
+    this.llmJudgeAgent = new LLMJudgeAgent(db);
+  }
   
   /**
    * Compare actual output with expected output
@@ -24,6 +29,14 @@ export class OutputEvaluator {
     expected: any, 
     outputType: 'number' | 'other'
   ): Promise<OutputComparison> {
+    logger.debug('🔬 Starting output comparison', {
+      outputType,
+      actualType: typeof actual,
+      expectedType: typeof expected,
+      actualValue: actual,
+      expectedValue: expected,
+    });
+    
     if (outputType === 'number') {
       return this.compareNumeric(actual, expected);
     }
@@ -41,7 +54,21 @@ export class OutputEvaluator {
     const actualNum = this.parseNumber(actual);
     const expectedNum = this.parseNumber(expected);
     
+    logger.debug('🔢 NUMERIC COMPARISON', {
+      actualNumber: actualNum,
+      expectedNumber: expectedNum,
+      actualRaw: actual,
+      expectedRaw: expected,
+      isExactMatch: actualNum === expectedNum,
+    });
+    
     if (isNaN(actualNum) || isNaN(expectedNum)) {
+      logger.warn('Failed to parse numeric values', {
+        actualNum,
+        expectedNum,
+        actual,
+        expected,
+      });
       return { similarity: 0, reasoning: 'One or both values could not be parsed as numbers' };
     }
     
@@ -66,9 +93,20 @@ export class OutputEvaluator {
     // Use exponential decay for smoother scoring
     const similarity = Math.exp(-2 * relativeDiff);
     
-    return { 
+    const result = { 
       similarity: Math.max(0, Math.min(1, similarity))
     };
+    
+    logger.debug('📊 NUMERIC COMPARISON RESULT', {
+      actualNum,
+      expectedNum,
+      absoluteDiff: diff,
+      relativeDiff: relativeDiff.toFixed(4),
+      similarity: result.similarity.toFixed(4),
+      grade: result.similarity >= 0.9 ? '🏆 EXCELLENT' : result.similarity >= 0.7 ? '✅ GOOD' : result.similarity >= 0.5 ? '⚠️ FAIR' : '❌ POOR',
+    });
+    
+    return result;
   }
   
   /**
@@ -100,41 +138,53 @@ export class OutputEvaluator {
    * @returns Similarity score and reasoning from LLM
    */
   private async compareWithLLMJudge(actual: any, expected: any): Promise<OutputComparison> {
+    logger.debug('🤖 USING LLM JUDGE FOR COMPARISON');
+    
     try {
-      // Prepare input for LLM judge
-      const input = JSON.stringify({ 
-        actual: actual, 
-        expected: expected 
+      logger.debug('📨 LLM JUDGE INPUT', {
+        actual,
+        expected,
       });
       
-      // Use system agent with DB-stored prompt
-      const result = await this.agentService.run(
-        input,
-        { agentKey: this.llmJudgeKey }
-      );
+      // Use LLM Judge agent
+      const result = await this.llmJudgeAgent.execute({
+        actual,
+        expected
+      });
       
-      // Extract similarity and reasoning from the output
-      if (result.output && typeof result.output === 'object') {
-        const similarity = Number(result.output.similarity);
-        const reasoning = result.output.reasoning || undefined;
-        
-        // Ensure similarity is in valid range
-        if (!isNaN(similarity) && similarity >= 0 && similarity <= 1) {
-          return { similarity, reasoning };
-        }
+      // Ensure similarity is in valid range
+      if (!isNaN(result.similarity) && result.similarity >= 0 && result.similarity <= 1) {
+        logger.debug('✅ LLM JUDGE RESULT', {
+          similarity: result.similarity.toFixed(4),
+          reasoning: result.reasoning || 'No reasoning provided',
+          grade: result.similarity >= 0.9 ? '🏆 EXCELLENT' : result.similarity >= 0.7 ? '✅ GOOD' : result.similarity >= 0.5 ? '⚠️ FAIR' : '❌ POOR',
+        });
+        return { similarity: result.similarity, reasoning: result.reasoning };
       }
       
       // Fallback if LLM judge output is invalid
-      console.warn('Invalid LLM judge output:', result.output);
+      logger.warn('⚠️ INVALID LLM JUDGE OUTPUT', {
+        output: result,
+        expected: 'Object with similarity (0-1) and reasoning fields',
+      });
       return { 
         similarity: 0, 
         reasoning: 'LLM judge returned invalid output format' 
       };
       
     } catch (error) {
-      console.error('Error in LLM judge evaluation:', error);
+      logger.error('❌ ERROR IN LLM JUDGE EVALUATION', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        actual,
+        expected,
+      });
       // Fallback to simple equality check
       const similarity = JSON.stringify(actual) === JSON.stringify(expected) ? 1.0 : 0.0;
+      logger.debug('🔄 USING EQUALITY CHECK FALLBACK', { 
+        similarity,
+        isExactMatch: similarity === 1.0,
+      });
       return { 
         similarity, 
         reasoning: 'LLM judge failed, used equality check fallback' 

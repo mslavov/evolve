@@ -1,5 +1,4 @@
-import { Database } from '../../db/client.js';
-import { AgentService } from '../agent.service.js';
+import { BaseAgent } from './base.agent.js';
 
 /**
  * Input for prompt research agent
@@ -27,24 +26,23 @@ export interface PromptResearchOutput {
 /**
  * AI agent that researches prompt improvement strategies
  */
-export class PromptResearchAgent {
-  private agentService: AgentService;
-  private readonly AGENT_KEY = 'prompt_researcher';
-  
-  constructor(db: Database) {
-    this.agentService = new AgentService(db);
-  }
+export class PromptResearchAgent extends BaseAgent<PromptResearchInput, PromptResearchOutput> {
+  readonly key = 'prompt_researcher';
   
   /**
    * Research improvement strategies for a prompt
    */
-  async research(input: PromptResearchInput): Promise<PromptResearchOutput> {
-    const result = await this.agentService.run(
-      JSON.stringify(input, null, 2),
-      { agentKey: this.AGENT_KEY }
-    );
+  async execute(input: PromptResearchInput): Promise<PromptResearchOutput> {
+    const result = await this.runAgent(input);
     
     // Trust the LLM to return properly formatted JSON
-    return JSON.parse(result.output);
+    return typeof result === 'string' ? JSON.parse(result) : result;
+  }
+  
+  /**
+   * Alias for execute to maintain backward compatibility
+   */
+  async research(input: PromptResearchInput): Promise<PromptResearchOutput> {
+    return this.execute(input);
   }
 }

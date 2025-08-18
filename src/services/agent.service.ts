@@ -9,6 +9,9 @@ import type { AgentVersion, NewAgentVersion } from '../db/schema/agent-versions.
 import { agentVersions } from '../db/schema/agent-versions.js';
 import { z } from 'zod';
 import { eq, and, desc } from 'drizzle-orm';
+import { createLogger } from '../utils/logger.js';
+
+const logger = createLogger('AgentService') as any;
 
 export interface RunOptions {
   agentKey?: string; // Agent to use
@@ -44,24 +47,60 @@ export class AgentService {
     // Agent key is now required
     const agentKey = options?.agentKey;
     if (!agentKey) {
+      logger.error('Agent key not provided');
       throw new Error('Agent key is required. Please specify an agent using --agent <key>');
     }
+    
+    logger.debug('🏁 STARTING AGENT RUN', {
+      agentKey,
+      inputType: typeof input,
+      inputValue: typeof input === 'string' && input.length <= 500 ? input : 
+                  typeof input === 'string' ? input.substring(0, 500) + '...' : 
+                  JSON.stringify(input, null, 2),
+      parentRunId: options.parentRunId,
+    });
     
     // Load the specified agent
     const agent = await this.agentRepo.findByKey(agentKey);
     if (!agent) {
+      logger.error('Agent not found', { agentKey });
       throw new Error(`Agent '${agentKey}' not found. Use 'pnpm cli agent list' to see available agents`);
     }
+    
+    logger.debug('🤖 AGENT CONFIGURATION', {
+      key: agent.key,
+      model: agent.model,
+      temperature: agent.temperature,
+      promptId: agent.promptId,
+      outputType: agent.outputType,
+      hasOutputSchema: !!agent.outputSchema,
+      maxTokens: agent.maxTokens,
+    });
     
     const currentPrompt = await this.promptService.getPrompt(agent.promptId);
     const provider = providerFactory.createProvider(agent.model);
     
     if (!provider || !currentPrompt) {
+      logger.error('Failed to initialize agent', {
+        agentKey,
+        hasPrompt: !!currentPrompt,
+        hasProvider: !!provider,
+      });
       throw new Error(`Failed to initialize agent '${agentKey}'`);
     }
     
+    logger.debug('Provider and prompt initialized', {
+      promptId: agent.promptId,
+      provider: agent.model,
+    });
+    
     // Apply prompt template with dictionary-based replacement
     let promptText = currentPrompt.template;
+    logger.debug('📝 PROMPT TEMPLATE APPLIED', {
+      templateLength: promptText.length,
+      promptPreview: promptText.length <= 500 ? promptText : promptText.substring(0, 500) + '...',
+      inputKeys: typeof input === 'object' ? Object.keys(input) : ['string input'],
+    });
     
     if (typeof input === 'object' && input !== null) {
       // Replace individual keys from the input object
@@ -91,6 +130,15 @@ export class AgentService {
     let result: any;
     let parsedOutput: any;
     
+    logger.info('🚀 CALLING LLM', {
+      model: agent.model,
+      temperature: agent.temperature,
+      maxTokens: agent.maxTokens,
+      outputType: agent.outputType,
+      hasSchema: !!agent.outputSchema,
+      messageCount: messages.length,
+    });
+    
     if (agent.outputType === 'structured' && agent.outputSchema) {
       // Check if provider has generateStructured method
       if ('generateStructured' in provider && typeof provider.generateStructured === 'function') {
@@ -119,6 +167,7 @@ export class AgentService {
           
           const zodSchema = createZodSchema(agent.outputSchema);
           
+          logger.debug('Using structured output generation');
           result = await provider.generateStructured(
             messages,
             zodSchema,
@@ -128,8 +177,11 @@ export class AgentService {
             }
           );
           parsedOutput = result.content;
+          logger.debug('Structured output generated successfully');
         } catch (error) {
-          console.warn('Structured output with provider failed, falling back to text generation:', error);
+          logger.warn('Structured output with provider failed, falling back to text generation', {
+            error: error instanceof Error ? error.message : String(error),
+          });
           // Set result to null to trigger fallback
           result = null;
         }
@@ -137,6 +189,7 @@ export class AgentService {
       
       // Fallback to text generation with schema instruction if structured output not available
       if (!result) {
+        logger.debug('Falling back to text generation with schema instruction');
         messages.unshift({
           role: 'system',
           content: `You must respond with valid JSON that matches this schema:\n${JSON.stringify(agent.outputSchema, null, 2)}\n\nDo not include any text before or after the JSON.`,
@@ -146,6 +199,7 @@ export class AgentService {
           temperature: agent.temperature,
           maxTokens: agent.maxTokens || undefined,
         });
+        logger.debug('Text generation completed');
         
         // Try to parse JSON from text output
         try {
@@ -182,22 +236,37 @@ export class AgentService {
           const zodSchema = createZodSchema(agent.outputSchema);
           parsedOutput = zodSchema.parse(parsedOutput);
         } catch (error) {
-          console.warn('Failed to parse or validate structured output:', error);
+          logger.warn('Failed to parse or validate structured output', {
+            error: error instanceof Error ? error.message : String(error),
+          });
           parsedOutput = result.content;
         }
       }
     } else {
       // Regular text generation
+      logger.debug('Using regular text generation');
       result = await provider.generateText(messages, {
         temperature: agent.temperature,
         maxTokens: agent.maxTokens || undefined,
       });
       parsedOutput = result.content;
+      logger.debug('Text generation completed');
     }
     
     const executionTime = Date.now() - startTime;
     
+    logger.info('✅ LLM CALL COMPLETED', {
+      executionTime: `${executionTime}ms`,
+      outputType: agent.outputType,
+      tokensUsed: result.usage?.totalTokens || 'N/A',
+      outputLength: typeof parsedOutput === 'string' ? parsedOutput.length : JSON.stringify(parsedOutput).length,
+      outputPreview: typeof parsedOutput === 'string' && parsedOutput.length <= 200 ? parsedOutput :
+                     typeof parsedOutput === 'string' ? parsedOutput.substring(0, 200) + '...' :
+                     JSON.stringify(parsedOutput, null, 2),
+    });
+    
     // Save the run
+    logger.debug('Saving run to database');
     const runData: NewRun = {
       agentId: agent.id,
       parentRunId: options?.parentRunId,
@@ -221,7 +290,7 @@ export class AgentService {
     
     const run = await this.runRepo.create(runData);
     
-    return {
+    const response = {
       output: parsedOutput,
       metadata: {
         runId: run.id,
@@ -230,6 +299,17 @@ export class AgentService {
       },
       runId: run.id,
     };
+    
+    logger.debug('🏆 RUN COMPLETED SUCCESSFULLY', {
+      runId: run.id,
+      agentKey: agent.key,
+      executionTime: `${executionTime}ms`,
+      output: typeof parsedOutput === 'string' && parsedOutput.length <= 500 ? parsedOutput :
+              typeof parsedOutput === 'string' ? parsedOutput.substring(0, 500) + '...' :
+              JSON.stringify(parsedOutput, null, 2),
+    });
+    
+    return response;
   }
   
   /**

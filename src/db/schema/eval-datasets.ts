@@ -2,11 +2,16 @@ import { sqliteTable, text, real, integer, index, uniqueIndex } from 'drizzle-or
 import { createId } from '@paralleldrive/cuid2';
 import { runs } from './runs.js';
 import { assessments } from './assessments.js';
+import { agents } from './agents.js';
 
 export const evalDatasets = sqliteTable('eval_datasets', {
   id: text('id').primaryKey().$defaultFn(() => createId()),
   runId: text('run_id').notNull().references(() => runs.id, { onDelete: 'restrict' }),
   assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'restrict' }),
+  
+  // Agent association
+  agentId: text('agent_id').references(() => agents.id, { onDelete: 'restrict' }),
+  agentVersion: integer('agent_version').default(1),
   
   // Data fields
   input: text('input').notNull(),
@@ -31,6 +36,8 @@ export const evalDatasets = sqliteTable('eval_datasets', {
   datasetTypeIdx: index('eval_dataset_type_idx').on(table.datasetType),
   runIdx: index('eval_run_idx').on(table.runId),
   assessmentIdx: index('eval_assessment_idx').on(table.assessmentId),
+  agentIdx: index('eval_agent_idx').on(table.agentId),
+  agentVersionIdx: index('eval_agent_version_idx').on(table.agentId, table.agentVersion),
   versionIdx: index('eval_dataset_version_idx').on(table.datasetVersion),
   deletedAtIdx: index('eval_dataset_deleted_idx').on(table.deletedAt),
   

@@ -2,6 +2,7 @@ import { Database } from '../db/client.js';
 import { RunRepository } from '../repositories/run.repository.js';
 import { AssessmentRepository } from '../repositories/assessment.repository.js';
 import { EvalDatasetRepository } from '../repositories/eval-dataset.repository.js';
+import { AgentRepository } from '../repositories/agent.repository.js';
 import type { Run } from '../db/schema/runs.js';
 import type { Assessment, NewAssessment } from '../db/schema/assessments.js';
 import type { EvalDataset, NewEvalDataset } from '../db/schema/eval-datasets.js';
@@ -45,11 +46,13 @@ export class AssessmentService {
   private runRepo: RunRepository;
   private assessmentRepo: AssessmentRepository;
   private evalDatasetRepo: EvalDatasetRepository;
+  private agentRepo: AgentRepository;
   
   constructor(private readonly db: Database) {
     this.runRepo = new RunRepository(db);
     this.assessmentRepo = new AssessmentRepository(db);
     this.evalDatasetRepo = new EvalDatasetRepository(db);
+    this.agentRepo = new AgentRepository(db);
   }
   
   /**
@@ -102,7 +105,7 @@ export class AssessmentService {
   /**
    * Build eval dataset from assessed runs (optimized)
    */
-  async buildDataset(params: BuildDatasetParams = {}): Promise<{
+  async buildDataset(params: BuildDatasetParams & { agentKey?: string } = {}): Promise<{
     added: number;
     filtered: number;
     version: string;
@@ -110,8 +113,20 @@ export class AssessmentService {
     const config = getDatasetConfig();
     const version = params.version || generateDatasetVersion();
     
-    // Get all runs efficiently
-    const allRuns = await this.runRepo.findMany({});
+    // Get runs - filter by agent if specified
+    const runFilters: any = {};
+    let agentId: string | undefined;
+    
+    if (params.agentKey) {
+      const agent = await this.agentRepo.findByKey(params.agentKey);
+      if (!agent) {
+        throw new Error(`Agent '${params.agentKey}' not found`);
+      }
+      agentId = agent.id;
+      runFilters.agentId = agentId;
+    }
+    
+    const allRuns = await this.runRepo.findMany(runFilters);
     if (allRuns.length === 0) {
       return { added: 0, filtered: 0, version };
     }
@@ -291,6 +306,8 @@ export class AssessmentService {
     return {
       runId: run.id,
       assessmentId: assessment.id,
+      agentId: run.agentId,
+      agentVersion: run.agentVersion || 1,
       input: run.input,
       expectedOutput: assessment.expectedOutput || determineExpectedOutput(run),
       agentOutput: formatOutputForDataset(run.output),

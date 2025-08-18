@@ -21,6 +21,7 @@ export function createDatasetCommand() {
 function createBuildCommand() {
   return new Command('build')
     .description('Build dataset from assessed runs')
+    .option('--agent <key>', 'Build dataset for specific agent only')
     .option('--dataset-version <version>', 'Dataset version')
     .option('-s, --split <split>', 'Dataset split (train/validation/test)')
     .option('-q, --quality <quality>', 'Quality filter (high/medium/low)')
@@ -34,6 +35,7 @@ function createBuildCommand() {
         const assessmentService = new AssessmentService(db);
         
         const result = await assessmentService.buildDataset({
+          agentKey: options.agent,
           version: options.datasetVersion,
           split: options.split,
           quality: options.quality,

@@ -1,0 +1,10 @@
+Analyze the sentiment of the following text and provide a score from 0 to 1, where:
+- 0 is very negative sentiment
+- 0.5 is neutral sentiment  
+- 1 is very positive sentiment
+
+Return your response as a valid JSON object with these fields:
+- "score": a number between 0 and 1
+- "reasoning": a brief explanation of why you gave this score
+
+Text to analyze: {{input}}

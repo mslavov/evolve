@@ -5,6 +5,9 @@ import { AgentService } from './agent.service.js';
 import { OutputEvaluator } from './evaluation/output-evaluator.js';
 import type { Agent, NewAgent } from '../db/schema/agents.js';
 import type { EvalDataset } from '../db/schema/eval-datasets.js';
+import { createLogger } from '../utils/logger.js';
+
+const logger = createLogger('EvaluationService') as any;
 
 /**
  * Single test result for a dataset item
@@ -83,7 +86,7 @@ export class EvaluationService {
     this.agentRepo = new AgentRepository(db);
     this.evalDatasetRepo = new EvalDatasetRepository(db);
     this.agentService = new AgentService(db);
-    this.outputEvaluator = new OutputEvaluator(this.agentService);
+    this.outputEvaluator = new OutputEvaluator(db);
   }
 
   /**
@@ -98,6 +101,18 @@ export class EvaluationService {
       agentKey?: string; // Use existing agent if provided
     }
   ): Promise<TestResult> {
+    logger.info('Starting agent configuration test', {
+      config: {
+        model: config.model,
+        temperature: config.temperature,
+        promptId: config.promptId,
+        outputType: config.outputType,
+      },
+      datasetSize: dataset.length,
+      includeDetails: options?.includeDetails,
+      existingAgent: options?.agentKey,
+    });
+    
     const startTime = Date.now();
     const outputType = OutputEvaluator.inferOutputType(config);
     const sampleResults: SampleResult[] = [];
@@ -112,6 +127,7 @@ export class EvaluationService {
     if (!agentKey) {
       // Create a temporary agent for testing
       const tempKey = `temp_eval_${Date.now()}_${Math.random()}`;
+      logger.debug('Creating temporary agent for evaluation', { tempKey });
       tempAgent = await this.agentRepo.create({
         key: tempKey,
         name: 'Temporary Evaluation Agent',
@@ -129,20 +145,57 @@ export class EvaluationService {
 
     try {
       // Test each sample
-      for (const data of dataset) {
+      for (let i = 0; i < dataset.length; i++) {
+        const data = dataset[i];
+        logger.debug(`\n${'='.repeat(80)}`);
+        logger.debug(`TESTING SAMPLE ${i + 1}/${dataset.length}`);
+        logger.debug(`${'='.repeat(80)}`);
+        
+        logger.debug({
+          fullInput: data.input,
+          inputLength: data.input.length,
+        }, '📥 INPUT');
+        
+        logger.debug({
+          expected: typeof data.expectedOutput === 'string' 
+            ? data.expectedOutput 
+            : JSON.stringify(data.expectedOutput, null, 2),
+          type: typeof data.expectedOutput,
+        }, '✅ EXPECTED OUTPUT');
+        
         try {
           // Run the agent
+          logger.debug(`🤖 Running agent: ${agentKey}`);
           const result = await this.agentService.run(data.input, { 
             agentKey
           });
+          
+          logger.debug({
+            output: result.output,
+            outputType: typeof result.output,
+            runId: result.runId,
+          }, '📤 ACTUAL OUTPUT');
 
           // Parse expected output
           const expected = typeof data.expectedOutput === 'string' 
             ? JSON.parse(data.expectedOutput)
             : data.expectedOutput;
 
+          logger.debug({
+            expected,
+            actual: result.output,
+            comparisonType: outputType,
+          }, '🔍 COMPARING OUTPUTS');
+
           // Compare outputs
           const comparison = await this.outputEvaluator.compare(result.output, expected, outputType);
+          
+          logger.debug({
+            similarity: comparison.similarity.toFixed(4),
+            error: (1 - comparison.similarity).toFixed(4),
+            reasoning: comparison.reasoning,
+            passed: comparison.similarity >= 0.7 ? '✅ PASS' : '❌ FAIL',
+          }, '📊 COMPARISON RESULT');
           
           totalSimilarity += comparison.similarity;
           const error = 1 - comparison.similarity;
@@ -151,7 +204,7 @@ export class EvaluationService {
           // Store sample result
           if (options?.includeDetails) {
             sampleResults.push({
-              input: data.input.substring(0, 100) + (data.input.length > 100 ? '...' : ''),
+              input: data.input,
               expected,
               actual: result.output,
               similarity: comparison.similarity,
@@ -160,12 +213,17 @@ export class EvaluationService {
           }
 
         } catch (error) {
-          console.warn(`Failed to test sample: ${error}`);
+          logger.error(`❌ FAILED TO TEST SAMPLE ${i + 1}`, {
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            input: data.input,
+            expectedOutput: data.expectedOutput,
+          });
           // Add failed sample with 0 score
           totalSquaredError += 1; // Maximum error for failed cases
           if (options?.includeDetails) {
             sampleResults.push({
-              input: data.input.substring(0, 100) + (data.input.length > 100 ? '...' : ''),
+              input: data.input,
               expected: data.expectedOutput,
               actual: null,
               similarity: 0,
@@ -185,6 +243,19 @@ export class EvaluationService {
     const avgScore = count > 0 ? totalSimilarity / count : 0;
     const avgError = count > 0 ? (count - totalSimilarity) / count : 0;
     const rmse = count > 0 ? Math.sqrt(totalSquaredError / count) : 0;
+
+    logger.debug(`${'='.repeat(80)}`);
+    logger.info({
+      metrics: {
+        averageScore: avgScore.toFixed(4),
+        averageError: avgError.toFixed(4),
+        rmse: rmse.toFixed(4),
+        samplesEvaluated: count,
+      },
+      duration: `${Date.now() - startTime}ms`,
+      performance: avgScore >= 0.7 ? '✅ GOOD' : avgScore >= 0.5 ? '⚠️ MODERATE' : '❌ POOR',
+    }, '📈 TEST CONFIGURATION COMPLETED');
+    logger.debug(`${'='.repeat(80)}`);
 
     return {
       config,
@@ -211,18 +282,46 @@ export class EvaluationService {
       includeDetails?: boolean;
     }
   ): Promise<EvaluationResult> {
+    logger.info('Starting agent evaluation', {
+      agentKey,
+      options,
+    });
+    
     const agent = await this.agentRepo.findByKey(agentKey);
     if (!agent) {
+      logger.error('Agent not found', { agentKey });
       throw new Error(`Agent '${agentKey}' not found`);
     }
+    
+    logger.debug('Agent loaded', { agent });
 
-    // Get test data for evaluation
-    const testData = await this.evalDatasetRepo.findMany({
+    // Get test data for evaluation - filter by agent
+    logger.debug('Fetching evaluation dataset', {
+      agentId: agent.id,
       version: options?.datasetVersion,
+      split: options?.split,
+      limit: options?.limit ?? 50,
+    });
+    
+    const testData = await this.evalDatasetRepo.findMany({
+      agentId: agent.id,
+      version: options?.datasetVersion,
+      split: options?.split,
       limit: options?.limit ?? 50,
     });
 
+    logger.info('Dataset loaded', { 
+      datasetSize: testData.length,
+      version: options?.datasetVersion || 'default',
+      split: options?.split || 'test',
+    });
+
     if (testData.length === 0) {
+      logger.error('No test data available', {
+        agentId: agent.id,
+        version: options?.datasetVersion,
+        split: options?.split || 'test',
+      });
       throw new Error(`No ${options?.split || 'test'} data available for evaluation`);
     }
 

@@ -4,8 +4,14 @@ import { EvalDatasetRepository } from '../repositories/eval-dataset.repository.j
 import { PromptRepository } from '../repositories/prompt.repository.js';
 import { EvaluationService } from './evaluation.service.js';
 import { PromptService } from './prompt.service.js';
-import { PromptResearchAgent, type PromptResearchInput, type PromptResearchOutput } from './agents/prompt-research.agent.js';
-import { PromptEngineerAgent, type PromptEngineeringInput, type PromptEngineeringOutput } from './agents/prompt-engineer.agent.js';
+import { 
+  PromptResearchAgent, 
+  PromptEngineerAgent,
+  type PromptResearchInput, 
+  type PromptResearchOutput,
+  type PromptEngineeringInput, 
+  type PromptEngineeringOutput 
+} from '../agents/index.js';
 import type { Agent } from '../db/schema/agents.js';
 import type { DetailedFeedback } from './evaluation/types.js';
 

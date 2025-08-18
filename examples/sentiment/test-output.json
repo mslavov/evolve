@@ -1,0 +1,14 @@
+{
+  "timestamp": "2025-08-18T09:14:13.841Z",
+  "agent": "sentiment-analyzer",
+  "input": {
+    "text": "I absolutely love this product! It exceeded all my expectations and the customer service was fantastic!"
+  },
+  "output": "Sure! Please provide the text you would like me to analyze for sentiment.",
+  "metadata": {
+    "runId": "caclxwn7vgmfcu2mc7h3k1k0",
+    "executionTime": 1480,
+    "tokenCount": 68
+  },
+  "runId": "caclxwn7vgmfcu2mc7h3k1k0"
+}

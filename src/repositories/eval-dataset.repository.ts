@@ -4,6 +4,8 @@ import { evalDatasets, type EvalDataset, type NewEvalDataset } from '../db/schem
 import { Database } from '../db/client.js';
 
 export interface DatasetFilters {
+  agentId?: string;
+  agentVersion?: number;
   source?: 'assessment' | 'human' | 'consensus' | 'synthetic';
   split?: 'train' | 'validation' | 'test';
   version?: string;
@@ -47,6 +49,16 @@ export class EvalDatasetRepository extends BaseRepository {
     
     // Exclude soft-deleted records by default
     conditions.push(sql`${evalDatasets.deletedAt} IS NULL`);
+    
+    // Filter by agent if specified
+    if (filters?.agentId) {
+      conditions.push(eq(evalDatasets.agentId, filters.agentId));
+    }
+    
+    // Filter by agent version if specified
+    if (filters?.agentVersion !== undefined) {
+      conditions.push(eq(evalDatasets.agentVersion, filters.agentVersion));
+    }
     
     // Note: source, split, version, quality are stored in metadata JSON
     // SQL filters on JSON fields are limited in SQLite
@@ -214,6 +226,16 @@ export class EvalDatasetRepository extends BaseRepository {
     
     // Exclude soft-deleted records by default
     conditions.push(sql`${evalDatasets.deletedAt} IS NULL`);
+    
+    // Filter by agent if specified
+    if (options.filters?.agentId) {
+      conditions.push(eq(evalDatasets.agentId, options.filters.agentId));
+    }
+    
+    // Filter by agent version if specified
+    if (options.filters?.agentVersion !== undefined) {
+      conditions.push(eq(evalDatasets.agentVersion, options.filters.agentVersion));
+    }
     
     // Apply filters
     // Score filtering removed - expectedOutput is JSON and complex to filter

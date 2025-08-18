@@ -1,5 +1,4 @@
-import { Database } from '../../db/client.js';
-import { AgentService } from '../agent.service.js';
+import { BaseAgent } from './base.agent.js';
 
 /**
  * Input for prompt engineering agent
@@ -32,24 +31,23 @@ export interface PromptEngineeringOutput {
 /**
  * AI agent that engineers improved prompts
  */
-export class PromptEngineerAgent {
-  private agentService: AgentService;
-  private readonly AGENT_KEY = 'prompt_engineer';
-  
-  constructor(db: Database) {
-    this.agentService = new AgentService(db);
-  }
+export class PromptEngineerAgent extends BaseAgent<PromptEngineeringInput, PromptEngineeringOutput> {
+  readonly key = 'prompt_engineer';
   
   /**
    * Engineer an improved prompt
    */
-  async improvePrompt(input: PromptEngineeringInput): Promise<PromptEngineeringOutput> {
-    const result = await this.agentService.run(
-      JSON.stringify(input, null, 2),
-      { agentKey: this.AGENT_KEY }
-    );
+  async execute(input: PromptEngineeringInput): Promise<PromptEngineeringOutput> {
+    const result = await this.runAgent(input);
     
     // Trust the LLM to return properly formatted JSON
-    return JSON.parse(result.output);
+    return typeof result === 'string' ? JSON.parse(result) : result;
+  }
+  
+  /**
+   * Alias for execute to maintain backward compatibility
+   */
+  async improvePrompt(input: PromptEngineeringInput): Promise<PromptEngineeringOutput> {
+    return this.execute(input);
   }
 }

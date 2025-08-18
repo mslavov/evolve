@@ -114,7 +114,16 @@ export class EvaluationService {
     });
     
     const startTime = Date.now();
-    const outputType = OutputEvaluator.inferOutputType(config);
+    const evaluatorConfig = OutputEvaluator.getEvaluatorConfig(config);
+    
+    // Require evaluator configuration
+    if (!evaluatorConfig || !evaluatorConfig.primaryTarget) {
+      throw new Error(
+        'Evaluator configuration is required for evaluation.\n' +
+        'Please configure your agent with --evaluator-target and --evaluator-strategy flags.'
+      );
+    }
+    
     const sampleResults: SampleResult[] = [];
     
     let totalSimilarity = 0;
@@ -138,6 +147,7 @@ export class EvaluationService {
         promptId: config.promptId || 'v1',
         outputType: config.outputType || 'structured',
         outputSchema: config.outputSchema,
+        metadata: config.metadata,
         description: 'Temporary agent for evaluation',
       });
       agentKey = tempAgent.key;
@@ -199,11 +209,11 @@ export class EvaluationService {
           logger.debug({
             expected,
             actual,
-            comparisonType: outputType,
+            evaluatorConfig,
           }, '🔍 COMPARING OUTPUTS');
 
-          // Compare outputs
-          const comparison = await this.outputEvaluator.compare(actual, expected, outputType);
+          // Compare outputs with evaluator config
+          const comparison = await this.outputEvaluator.compare(actual, expected, evaluatorConfig);
           
           logger.debug({
             similarity: comparison.similarity.toFixed(4),
@@ -349,6 +359,7 @@ export class EvaluationService {
         maxTokens: agent.maxTokens,
         outputType: agent.outputType,
         outputSchema: agent.outputSchema,
+        metadata: agent.metadata, // Include metadata for evaluator config
       },
       testData,
       {

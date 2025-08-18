@@ -345,6 +345,7 @@ export class AgentService {
       outputSchema?: Record<string, any>;
       description?: string;
       isDefault?: boolean;
+      metadata?: Record<string, any>;
     }
   ): Promise<Agent> {
     // Create a prompt for this agent
@@ -368,6 +369,7 @@ export class AgentService {
       outputType: options?.outputType || 'structured',
       outputSchema: options?.outputSchema,
       description: options?.description,
+      metadata: options?.metadata,
       isSystemAgent: false,
     });
   }

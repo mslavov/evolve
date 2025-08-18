@@ -2,6 +2,8 @@ import type { Agent } from '../../db/schema/agents.js';
 import { Database } from '../../db/client.js';
 import { LLMJudgeAgent } from '../../agents/index.js';
 import { createLogger } from '../../utils/logger.js';
+import type { EvaluatorConfig } from '../../types/index.js';
+import { extractValueByPath, isNumericValue, parseAsNumber } from '../../utils/json-path.js';
 
 const logger = createLogger('OutputEvaluator') as any;
 
@@ -21,26 +23,64 @@ export class OutputEvaluator {
    * Compare actual output with expected output
    * @param actual The actual output from the agent
    * @param expected The expected output
-   * @param outputType The inferred output type ('number' or 'other')
+   * @param config Evaluator configuration (required)
    * @returns Normalized similarity score (0-1) and optional reasoning
    */
   async compare(
     actual: any, 
     expected: any, 
-    outputType: 'number' | 'other'
+    config: EvaluatorConfig
   ): Promise<OutputComparison> {
+    // Require evaluator configuration to prevent unexpected costs
+    if (!config || !config.primaryTarget) {
+      throw new Error(
+        'Evaluator configuration is required to prevent unexpected LLM costs.\n' +
+        'Please specify primaryTarget and strategy for your agent:\n' +
+        '  pnpm cli agent update <agent-key> \\\n' +
+        '    --evaluator-target "<field>" \\\n' +
+        '    --evaluator-strategy "numeric|exact|llm|auto"'
+      );
+    }
+
     logger.debug('🔬 Starting output comparison', {
-      outputType,
       actualType: typeof actual,
       expectedType: typeof expected,
       actualValue: actual,
       expectedValue: expected,
+      config,
     });
     
-    if (outputType === 'number') {
-      return this.compareNumeric(actual, expected);
+    // Extract values using primaryTarget
+    const actualValue = extractValueByPath(actual, config.primaryTarget);
+    const expectedValue = extractValueByPath(expected, config.primaryTarget);
+    
+    logger.debug('📍 Extracted target values', {
+      target: config.primaryTarget,
+      actualValue,
+      expectedValue,
+      strategy: config.strategy,
+    });
+    
+    // Determine comparison strategy
+    const strategy = config.strategy || 'auto';
+    
+    if (strategy === 'numeric' || (strategy === 'auto' && isNumericValue(actualValue) && isNumericValue(expectedValue))) {
+      logger.debug('🔢 Using numeric comparison for target field');
+      return this.compareNumeric(actualValue, expectedValue);
+    } else if (strategy === 'exact') {
+      logger.debug('✅ Using exact match comparison');
+      const isMatch = JSON.stringify(actualValue) === JSON.stringify(expectedValue);
+      return { 
+        similarity: isMatch ? 1.0 : 0.0,
+        reasoning: isMatch ? 'Exact match' : 'Values do not match exactly'
+      };
+    } else if (strategy === 'llm' || strategy === 'auto') {
+      logger.debug('🤖 Using LLM comparison for target field');
+      return this.compareWithLLMJudge(actualValue, expectedValue);
     }
-    return this.compareWithLLMJudge(actual, expected);
+    
+    // Should not reach here, but handle gracefully
+    throw new Error(`Unknown comparison strategy: ${strategy}`);
   }
   
   /**
@@ -113,22 +153,18 @@ export class OutputEvaluator {
    * Parse a value as a number, handling various formats
    */
   private parseNumber(value: any): number {
-    if (typeof value === 'number') {
-      return value;
-    }
+    // Use the utility function for consistent parsing
+    const parsed = parseAsNumber(value);
     
-    if (typeof value === 'string') {
-      return parseFloat(value);
-    }
-    
-    if (typeof value === 'object' && value !== null) {
+    // If still NaN and it's an object, try common numeric fields
+    if (isNaN(parsed) && typeof value === 'object' && value !== null) {
       // Try to extract a numeric value from an object
       if ('score' in value) return this.parseNumber(value.score);
       if ('value' in value) return this.parseNumber(value.value);
       if ('result' in value) return this.parseNumber(value.result);
     }
     
-    return NaN;
+    return parsed;
   }
   
   /**
@@ -195,46 +231,23 @@ export class OutputEvaluator {
   }
   
   /**
-   * Infer output type from agent's output schema
-   * @param agent The agent to check
-   * @returns 'number' if the schema indicates numeric output, 'other' otherwise
+   * Get evaluator configuration from agent metadata
+   * @param agent The agent to get config from
+   * @returns The evaluator configuration if present
    */
-  static inferOutputType(agent: Partial<Agent>): 'number' | 'other' {
-    if (!agent.outputSchema) {
-      return 'other';
+  static getEvaluatorConfig(agent: Partial<Agent>): EvaluatorConfig | undefined {
+    if (!agent.metadata) {
+      return undefined;
     }
     
     try {
-      const schema = typeof agent.outputSchema === 'string' 
-        ? JSON.parse(agent.outputSchema)
-        : agent.outputSchema;
+      const metadata = typeof agent.metadata === 'string'
+        ? JSON.parse(agent.metadata)
+        : agent.metadata;
       
-      // Check if the root type is numeric
-      if (schema.type === 'number' || schema.type === 'integer') {
-        return 'number';
-      }
-      
-      // Check if it's an object with a single numeric property (common pattern)
-      if (schema.type === 'object' && schema.properties) {
-        const props = Object.keys(schema.properties);
-        if (props.length === 1) {
-          const prop = schema.properties[props[0]];
-          if (prop.type === 'number' || prop.type === 'integer') {
-            return 'number';
-          }
-        }
-        
-        // Check specifically for 'score' property
-        if (schema.properties.score && 
-            (schema.properties.score.type === 'number' || 
-             schema.properties.score.type === 'integer')) {
-          return 'number';
-        }
-      }
-      
-      return 'other';
+      return metadata.evaluatorConfig;
     } catch {
-      return 'other';
+      return undefined;
     }
   }
 }

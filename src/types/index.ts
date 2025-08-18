@@ -46,3 +46,23 @@ export const scoringSchema = z.object({
     actionability: z.number().min(0).max(1).optional()
   }).optional()
 });
+
+// Evaluator configuration for specifying how to compare outputs
+export interface EvaluatorConfig {
+  // Primary field to evaluate (e.g., "score", "result.value")
+  // Uses simple dot notation for nested fields
+  primaryTarget?: string;
+  
+  // Strategy for comparison
+  // - 'numeric': Direct numeric comparison
+  // - 'exact': Exact match comparison
+  // - 'llm': Use LLM as judge
+  // - 'auto': Automatically determine based on type (default)
+  strategy?: 'numeric' | 'exact' | 'llm' | 'auto';
+  
+  // Optional metadata for future extensions
+  metadata?: {
+    tolerance?: number;  // For numeric comparison (e.g., 0.01 for 1% tolerance)
+    rubric?: string;     // Custom rubric for LLM evaluation
+  };
+}

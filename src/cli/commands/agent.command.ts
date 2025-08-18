@@ -91,6 +91,8 @@ function createCreateCommand() {
     .option('--max-tokens <n>', 'Maximum tokens', parseInt)
     .option('--output-type <type>', 'Output type: structured or text', 'structured')
     .option('--schema-file <path>', 'Path to JSON file containing custom output schema')
+    .option('--evaluator-target <field>', 'Primary field to evaluate (e.g., "score", "result.value")')
+    .option('--evaluator-strategy <strategy>', 'Evaluation strategy: numeric, exact, llm, auto', 'auto')
     .action(async (key, options) => {
       const spinner = ora('Saving agent...').start();
       
@@ -106,6 +108,17 @@ function createCreateCommand() {
           const fs = await import('fs/promises');
           const schemaContent = await fs.readFile(options.schemaFile, 'utf-8');
           outputSchema = JSON.parse(schemaContent);
+        }
+        
+        // Handle evaluator configuration
+        let metadata = undefined;
+        if (options.evaluatorTarget || options.evaluatorStrategy !== 'auto') {
+          metadata = {
+            evaluatorConfig: {
+              primaryTarget: options.evaluatorTarget,
+              strategy: options.evaluatorStrategy
+            }
+          };
         }
         
         // Handle prompt - either inline content, file, or existing prompt ID
@@ -134,6 +147,7 @@ function createCreateCommand() {
               outputType: options.outputType,
               outputSchema,
               description: options.description,
+              metadata,
             }
           );
         } else if (options.promptId) {
@@ -148,6 +162,7 @@ function createCreateCommand() {
             maxTokens: options.maxTokens,
             outputType: options.outputType,
             outputSchema,
+            metadata,
           });
         } else {
           throw new Error('Either --prompt, --prompt-file, or --prompt-id is required');
@@ -186,6 +201,16 @@ function createShowCommand() {
         }
         
         console.log(chalk.cyan(`\n🤖 Agent: ${agent.key}\n`));
+        
+        // Extract evaluator config if present
+        let evaluatorConfig = undefined;
+        if (agent.metadata) {
+          const metadata = typeof agent.metadata === 'string' 
+            ? JSON.parse(agent.metadata) 
+            : agent.metadata;
+          evaluatorConfig = metadata?.evaluatorConfig;
+        }
+        
         console.log(JSON.stringify({
           name: agent.name,
           type: agent.type,
@@ -198,6 +223,7 @@ function createShowCommand() {
           isSystemAgent: agent.isSystemAgent,
           averageScore: agent.averageScore,
           evaluationCount: agent.evaluationCount,
+          evaluatorConfig,
         }, null, 2));
       } catch (error) {
         spinner.fail('Failed to load agent');
@@ -218,6 +244,8 @@ function createUpdateCommand() {
     .option('--max-tokens <n>', 'Maximum tokens', parseInt)
     .option('--active', 'Set agent as active')
     .option('--inactive', 'Set agent as inactive')
+    .option('--evaluator-target <field>', 'Primary field to evaluate (e.g., "score", "result.value")')
+    .option('--evaluator-strategy <strategy>', 'Evaluation strategy: numeric, exact, llm, auto')
     .action(async (key, options) => {
       const spinner = ora('Updating agent...').start();
       
@@ -238,6 +266,28 @@ function createUpdateCommand() {
         if (options.maxTokens) updates.maxTokens = options.maxTokens;
         if (options.active) updates.isActive = true;
         if (options.inactive) updates.isActive = false;
+        
+        // Handle evaluator configuration update
+        if (options.evaluatorTarget || options.evaluatorStrategy) {
+          // Get existing metadata or create new
+          const existingMetadata = agent.metadata || {};
+          const metadata = typeof existingMetadata === 'string' 
+            ? JSON.parse(existingMetadata) 
+            : existingMetadata;
+          
+          // Update evaluator config
+          if (!metadata.evaluatorConfig) {
+            metadata.evaluatorConfig = {};
+          }
+          if (options.evaluatorTarget) {
+            metadata.evaluatorConfig.primaryTarget = options.evaluatorTarget;
+          }
+          if (options.evaluatorStrategy) {
+            metadata.evaluatorConfig.strategy = options.evaluatorStrategy;
+          }
+          
+          updates.metadata = metadata;
+        }
         
         const updated = await agentService.saveAgent(key, updates);
         

@@ -321,6 +321,90 @@ Provide:
     json('{"systemAgent": true, "type": "evaluator"}'),
     unixepoch(),
     unixepoch()
+  ),
+  
+  -- Prompt Research Agent
+  (
+    'prompt_research_v1',
+    'prompt_research_v1',
+    'Prompt Research Agent',
+    'Analyzes evaluation feedback to find prompt improvement strategies',
+    'You are a prompt optimization researcher analyzing evaluation results to identify improvement strategies.
+
+Evaluation feedback and scores:
+{{input}}
+
+Your task:
+1. Analyze the evaluation feedback to understand performance issues
+2. Identify root causes of failures or low scores
+3. Research and suggest specific prompt engineering techniques to address these issues
+4. Prioritize suggestions by expected impact
+
+Focus on actionable prompt improvements such as:
+- Adding few-shot examples for consistency
+- Using chain-of-thought for complex reasoning
+- Improving instruction clarity
+- Adding output format specifications
+- Including edge case handling
+- Implementing calibration techniques
+
+Provide your analysis in this format:
+## Key Issues Identified
+[List main problems from the evaluation]
+
+## Root Cause Analysis
+[Explain why these issues are occurring]
+
+## Recommended Prompt Improvements
+[Ordered list of specific techniques, most impactful first]
+1. [Technique]: [How it addresses the issue]
+2. [Technique]: [How it addresses the issue]
+...
+
+## Implementation Notes
+[Specific guidance on how to apply these improvements]',
+    1,
+    1,
+    json('{"systemAgent": true, "type": "researcher"}'),
+    unixepoch(),
+    unixepoch()
+  ),
+  
+  -- Prompt Engineer Agent  
+  (
+    'prompt_engineer_v1',
+    'prompt_engineer_v1',
+    'Prompt Engineer Agent',
+    'Generates improved prompt versions based on research insights',
+    'You are an expert prompt engineer tasked with improving an existing prompt based on research insights.
+
+Current prompt:
+{{prompt}}
+
+Evaluation score: {{score}}
+Feedback: {{feedback}}
+
+Research insights and recommendations:
+{{research}}
+
+Your task:
+1. Apply the recommended improvements to the current prompt
+2. Maintain the core functionality and any template variables (keep {{variable}} placeholders intact)
+3. Do not overfit to specific feedback - keep improvements generalizable
+4. Ensure the prompt remains clear, actionable, and well-structured
+
+Generate an improved version of the prompt that:
+- Addresses the identified issues
+- Incorporates the suggested techniques
+- Maintains backward compatibility with existing usage
+- Improves expected performance
+
+Output only the improved prompt text, nothing else.',
+    1,
+    1,
+    json('{"systemAgent": true, "type": "optimizer"}'),
+    unixepoch(),
+    unixepoch()
   );
 
 -- Insert system agents (with version)
@@ -437,6 +521,46 @@ VALUES
     'structured',
     json('{"type": "object", "properties": {"verdict": {"type": "string", "enum": ["correct", "incorrect"]}, "confidence": {"type": "number"}, "reasoning": {"type": "string"}, "correctedScore": {"type": "number"}, "issues": {"type": "array"}}}'),
     'System agent for assessing run quality and correctness',
+    1,
+    1,
+    unixepoch(),
+    unixepoch()
+  ),
+  
+  -- Prompt Research Agent
+  (
+    'agent_prompt_research_id',
+    'prompt_researcher',
+    'Prompt Research Agent',
+    1,
+    'researcher',
+    'gpt-4o-mini',
+    0.7,
+    1500,
+    'prompt_research_v1',
+    'text',
+    NULL,
+    'Analyzes evaluation feedback and finds prompt improvement strategies',
+    1,
+    1,
+    unixepoch(),
+    unixepoch()
+  ),
+  
+  -- Prompt Engineer Agent
+  (
+    'agent_prompt_engineer_id',
+    'prompt_engineer',
+    'Prompt Engineer Agent',
+    1,
+    'optimizer',
+    'gpt-4o-mini',
+    0.5,
+    2000,
+    'prompt_engineer_v1',
+    'text',
+    NULL,
+    'Generates improved prompt versions based on research insights',
     1,
     1,
     unixepoch(),

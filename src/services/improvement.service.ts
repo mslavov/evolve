@@ -202,16 +202,9 @@ export class ImprovementService extends EventEmitter {
       // Estimate cost first
       const estimate = await this.costTrackerService.estimateIterativeOptimizationCost({
         baseAgentKey: params.baseAgentKey,
-        objectives: [{
-          id: 'performance',
-          name: 'Overall Performance',
-          description: 'General agent performance',
-          weight: 1.0,
-          target: params.targetScore || 0.9,
-          higherIsBetter: true,
-        }],
+        targetScore: params.targetScore || 0.8,
         maxIterations: params.maxIterations || 10,
-        enableResearch: params.enableResearch,
+        verbose: params.verbose,
       });
 
       // Check budget before proceeding
@@ -236,16 +229,8 @@ export class ImprovementService extends EventEmitter {
 
     const iterativeParams: IterativeOptimizationParams = {
       baseAgentKey: params.baseAgentKey,
-      objectives: [{
-        id: 'performance',
-        name: 'Overall Performance',
-        description: 'General agent performance',
-        weight: 1.0,
-        target: params.targetScore || 0.9,
-        higherIsBetter: true,
-      }],
+      targetScore: params.targetScore || 0.8,
       maxIterations: params.maxIterations || 10,
-      enableResearch: params.enableResearch || false,
       verbose: params.verbose,
     };
 
@@ -253,26 +238,29 @@ export class ImprovementService extends EventEmitter {
 
     // Convert to expected format
     const iterations = result.history.map(step => ({
-      score: step.overallScore,
-      improvements: Object.keys(step.improvements || {}),
+      score: step.score,
+      improvements: step.appliedImprovements || [],
     }));
 
     const recommendations: string[] = [];
-    if (result.converged) {
-      recommendations.push('Optimization converged successfully');
+    if (result.targetReached) {
+      recommendations.push('Target score reached successfully');
     }
-    if (result.finalOverallScore > 0.9) {
+    if (result.finalScore > 0.9) {
       recommendations.push('Excellent performance achieved');
     }
-    if (result.researchInsights.length > 0) {
-      recommendations.push(`${result.researchInsights.length} research insights discovered`);
+    if (result.totalImprovement > 0.2) {
+      recommendations.push(`Significant improvement: ${(result.totalImprovement * 100).toFixed(1)}%`);
     }
 
+    // Fetch the final agent
+    const finalAgent = await this.agentRepo.findByKey(result.finalAgentKey);
+    
     return {
-      finalAgent: result.finalConfig,
-      finalScore: result.finalOverallScore,
+      finalAgent: finalAgent || undefined,
+      finalScore: result.finalScore,
       iterations,
-      converged: result.converged,
+      converged: result.targetReached,
       reason: result.stoppedReason,
       recommendations,
     };

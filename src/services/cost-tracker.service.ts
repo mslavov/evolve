@@ -429,12 +429,11 @@ export class CostTrackerService extends EventEmitter {
    */
   async estimateIterativeOptimizationCost(params: IterativeOptimizationParams): Promise<CostEstimation> {
     const maxIterations = params.maxIterations || 10;
-    const objectives = params.objectives || [];
 
-    // Estimate operations per iteration
-    const evaluationsPerIteration = objectives.length + 1; // One per objective + overall evaluation
-    const researchOperationsPerIteration = params.enableResearch ? 2 : 0; // Research insights gathering
-    const optimizationOperationsPerIteration = 1; // Configuration optimization
+    // Estimate operations per iteration (simplified)
+    const evaluationsPerIteration = 1; // One evaluation per iteration
+    const researchOperationsPerIteration = 1; // Always do research
+    const optimizationOperationsPerIteration = 1; // Always optimize prompt
     
     const totalOperationsPerIteration = evaluationsPerIteration + researchOperationsPerIteration + optimizationOperationsPerIteration;
     const totalOperations = maxIterations * totalOperationsPerIteration;
@@ -485,9 +484,7 @@ export class CostTrackerService extends EventEmitter {
       assumptions: [
         `${maxIterations} maximum iterations`,
         `${totalOperationsPerIteration} operations per iteration`,
-        `${objectives.length} objectives to optimize`,
-        `Research enabled: ${params.enableResearch}`,
-        `Pattern learning enabled: ${params.enablePatternLearning}`,
+        'Research and optimization enabled',
         'Default model: ' + defaultModel,
         `Estimated ${estimatedInputTokens + estimatedOutputTokens} tokens per operation`,
         'Costs based on current model pricing',
@@ -580,28 +577,25 @@ export class CostTrackerService extends EventEmitter {
 
     for (const step of steps) {
       // Each step involves multiple operations (evaluation, research, optimization)
-      const operationsPerStep = Object.keys(step.objectiveScores).length + 
-                               step.researchInsights.length + 
-                               1; // +1 for optimization operation
+      const operationsPerStep = 3; // evaluation + research + optimization
 
-      const estimatedInputTokens = this.estimateInputTokens(step.config.model || baseModel) * operationsPerStep * 1.5;
-      const estimatedOutputTokens = this.estimateOutputTokens(step.config.model || baseModel) * operationsPerStep * 1.2;
+      const estimatedInputTokens = this.estimateInputTokens(baseModel) * operationsPerStep * 1.5;
+      const estimatedOutputTokens = this.estimateOutputTokens(baseModel) * operationsPerStep * 1.2;
 
       const entry = await this.trackCost({
         sessionId,
-        model: step.config.model || baseModel,
-        provider: this.getProviderForModel(step.config.model || baseModel),
+        model: baseModel,
+        provider: this.getProviderForModel(baseModel),
         inputTokens: estimatedInputTokens,
         outputTokens: estimatedOutputTokens,
         totalTokens: estimatedInputTokens + estimatedOutputTokens,
         operationType: 'iterative-optimization',
         metadata: {
           iteration: step.iteration,
-          objectiveScores: step.objectiveScores,
-          overallScore: step.overallScore,
-          improvements: step.improvements,
-          strategies: step.strategies,
-          learningRate: step.learningRate,
+          score: step.score,
+          improvement: step.improvement,
+          appliedImprovements: step.appliedImprovements,
+          feedback: step.feedback,
         },
       });
 

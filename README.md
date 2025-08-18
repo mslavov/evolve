@@ -21,11 +21,11 @@ Traditional AI agents remain static after deployment, requiring manual intervent
 - **Research-Driven**: Integrate external knowledge for informed improvements
 - **Convergence Detection**: Know when optimal performance is reached
 
-### 🔌 Pluggable Architecture
-- **Evaluation Strategies**: Numeric scoring, fact-based validation, or custom metrics
+### 🔌 Clean Architecture
+- **Dual Optimization Modes**: AI-driven iterative improvement or systematic grid search
 - **Framework Agnostic**: Works with Mastra, LangChain, or any TypeScript agent system
-- **Extensible Agents**: Add custom optimization and research agents
-- **Flexible Integration**: Drop-in enhancement for existing agents
+- **Specialized AI Agents**: Prompt research and engineering agents work in tandem
+- **Budget Controls**: Built-in cost management with configurable limits
 
 ### 📊 Advanced Analytics
 - **Performance Tracking**: Monitor improvement across iterations
@@ -37,17 +37,19 @@ Traditional AI agents remain static after deployment, requiring manual intervent
 
 ```
 ┌─────────────────────────────────────────┐
-│           Flow Orchestrator             │
-│  (Manages iterative optimization loop)  │
+│        Improvement Service              │
+│  (Orchestrates optimization modes)      │
 └────────────┬───────────────┬────────────┘
              │               │
-    ┌────────▼──────┐ ┌─────▼──────┐
-    │  Evaluation   │ │  Research  │
-    │    Agent      │ │   Agent    │
-    └───────────────┘ └────────────┘
-             │               │
-    ┌────────▼───────────────▼────────┐
-    │      Optimization Agent         │
+    ┌────────▼──────┐ ┌─────▼──────────┐
+    │  Iterative    │ │  Grid Search   │
+    │ Optimization  │ │   Service      │
+    └───────┬───────┘ └────────────────┘
+            │
+    ┌───────▼────────────────────┐
+    │   AI Agent Collaboration   │
+    │ • Prompt Research Agent    │
+    │ • Prompt Engineer Agent    │
     │  (Implements improvements)      │
     └─────────────────────────────────┘
              │

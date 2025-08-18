@@ -2,87 +2,102 @@
 
 ## Overview
 
-**Evolve** implements a sophisticated, iterative optimization approach that enables AI agents to continuously improve through every interaction. The system features flow-based orchestration, multi-agent collaboration, research-driven optimization, and a pluggable evaluation architecture designed to work with any TypeScript agent framework.
+**Evolve** implements a streamlined, AI-driven optimization approach that enables agents to continuously improve through intelligent prompt engineering. The system features two primary optimization modes: iterative AI-driven improvement and systematic grid search, both with built-in budget controls and cost tracking.
 
 ## Architecture
 
 ### Core Components
 
-#### 1. Flow Orchestrator (`src/services/orchestration/flow.orchestrator.ts`)
-- Manages iterative optimization loops
-- Coordinates multiple agents
-- Handles state persistence and recovery
+#### 1. Iterative Optimization Service (`src/services/iterative-optimization.service.ts`)
+- Manages AI-driven optimization loops
+- Coordinates prompt research and engineering agents
 - Implements convergence detection
+- Creates versioned prompts and agents
 
-#### 2. Evaluation System
-- **Registry** (`src/services/evaluation/registry.ts`): Manages available evaluation strategies
-- **Strategies**: Pluggable evaluation methods
-  - `NumericScoreEvaluator`: Traditional numeric scoring
-  - `FactBasedEvaluator`: Fact-checking and completeness evaluation
-  - `HybridEvaluator`: Combines multiple evaluation approaches
-- **Pattern Analyzer** (`src/services/evaluation/pattern-analyzer.ts`): Identifies failure patterns
-- **Feedback Synthesizer** (`src/services/evaluation/feedback-synthesizer.ts`): Generates actionable feedback
+#### 2. Grid Search Service (`src/services/grid-search.service.ts`) 
+- Systematic parameter exploration
+- Tests combinations of models, temperatures, and prompts
+- Parallel configuration testing
+- Performance metric tracking
 
-#### 3. Multi-Agent System
-- **Evaluation Agent** (`src/services/agents/evaluation.agent.ts`): Runs evaluations with selected strategies
-- **Research Agent** (`src/services/agents/research.agent.ts`): Finds improvement strategies from knowledge sources
-- **Optimization Agent** (`src/services/agents/optimization.agent.ts`): Implements improvements based on research
+#### 3. AI Agent System
+- **Prompt Research Agent** (`src/services/agents/prompt-research.agent.ts`): Analyzes weaknesses and researches improvements
+- **Prompt Engineer Agent** (`src/services/agents/prompt-engineer.agent.ts`): Implements improvements based on research
 
-#### 4. State Management (`src/services/orchestration/optimization-state.ts`)
-- Tracks optimization progress
-- Manages convergence metrics
-- Enables checkpoint/resume functionality
+#### 4. Cost Management (`src/services/cost-tracker.service.ts`)
+- Pre-flight cost estimation
+- Budget enforcement (default $10 limit)
+- Real-time cost tracking
+- Budget alerts and warnings
 
 ## Features
 
-### Pluggable Evaluation Strategies
+### AI-Driven Iterative Optimization
 
-The system supports multiple evaluation strategies that can be selected automatically or manually:
-
-```typescript
-// Register strategies
-registry.register(new NumericScoreEvaluator());
-registry.register(new FactBasedEvaluator());
-registry.register(new CustomEvaluator());
-
-// Auto-select based on context
-const strategy = registry.selectStrategy(context);
-
-// Or specify manually
-const config: EvaluationConfig = {
-  strategy: 'fact-based',
-  feedbackDetail: 'detailed'
-};
-```
-
-### Iterative Optimization Flow
-
-The system performs iterative optimization with automatic convergence detection:
+The system performs intelligent optimization through research and engineering cycles:
 
 ```typescript
 const result = await improvementService.runIterativeOptimization({
-  baseConfigKey: 'default',
+  baseAgentKey: 'my-agent',
   targetScore: 0.9,
   maxIterations: 10,
-  evaluationStrategy: 'hybrid',
-  enableResearch: true,
   verbose: true
 });
 ```
 
-### Research-Driven Improvements
+#### How It Works:
+1. **Evaluate** current agent performance
+2. **Research** improvement strategies using AI
+3. **Engineer** improved prompts based on research
+4. **Test** new configuration
+5. **Repeat** until convergence or target reached
 
-The Research Agent integrates multiple knowledge sources:
-- Internal optimization patterns
-- Historical improvement data
-- External research (simulated)
+### Grid Search Optimization
 
-### Pattern Recognition
+Systematic exploration of parameter space:
 
-The system identifies and tracks failure patterns across iterations:
-- Persistent patterns (appearing across multiple iterations)
-- Cross-strategy patterns (identified by multiple evaluators)
-- Pattern-specific solutions
+```typescript
+const result = await improvementService.optimizeConfiguration({
+  baseAgentKey: 'my-agent',
+  variations: {
+    models: ['gpt-4o', 'gpt-4o-mini'],
+    temperatures: [0.3, 0.5, 0.7],
+    promptIds: ['v1', 'v2']
+  },
+  sampleSize: 100
+});
+```
+
+### Convergence Detection
+
+The system automatically detects when optimization has plateaued:
+
+```typescript
+interface ConvergenceConfig {
+  targetScore: number;                    // Stop when this score is reached
+  maxIterations: number;                  // Maximum iterations allowed
+  maxConsecutiveNoImprovement: number;    // Stop after N iterations without improvement
+  minImprovementThreshold: number;        // Minimum improvement to continue
+}
+```
+
+### Budget Management
+
+All optimization operations include budget controls:
+
+```typescript
+// With budget enforcement (default)
+await improvementService.runIterativeOptimization({
+  baseAgentKey: 'agent',
+  maxBudget: 5.00  // Override default $10 limit
+});
+
+// Disable budget checks (use with caution!)
+await improvementService.runIterativeOptimization({
+  baseAgentKey: 'agent',
+  noBudget: true
+});
+```
 
 ## Usage
 
@@ -90,70 +105,61 @@ The system identifies and tracks failure patterns across iterations:
 
 ```typescript
 import { ImprovementService } from './services/improvement.service.js';
+import { getDatabase } from './db/client.js';
 
+const db = getDatabase();
 const service = new ImprovementService(db);
-await service.initialize();
 
-// Run iterative optimization
+// Run AI-driven optimization
 const result = await service.runIterativeOptimization({
-  baseConfigKey: 'current-config',
+  baseAgentKey: 'scorer-agent',
   targetScore: 0.85,
-  maxIterations: 5
+  maxIterations: 5,
+  verbose: true
 });
 
-console.log(`Final score: ${result.result.finalScore}`);
-console.log(`Iterations: ${result.result.iterations}`);
-console.log(`Improvement: ${result.result.totalImprovement}`);
+console.log(`Final score: ${result.finalScore}`);
+console.log(`Iterations: ${result.iterations.length}`);
+console.log(`Converged: ${result.converged}`);
 ```
 
-### Custom Evaluation Strategy
+### Parameter Exploration with Grid Search
 
 ```typescript
-class DomainSpecificEvaluator implements EvaluationStrategy {
-  name = 'domain-specific';
-  type = 'custom' as const;
-  
-  async evaluate(predictions: any[], groundTruth: any[]): Promise<EvaluationResult> {
-    // Custom evaluation logic
-    return {
-      score: calculateScore(predictions, groundTruth),
-      metrics: { /* custom metrics */ },
-      details: [ /* evaluation details */ ]
-    };
-  }
-  
-  generateFeedback(result: EvaluationResult): DetailedFeedback {
-    // Generate domain-specific feedback
-    return {
-      summary: 'Custom evaluation results',
-      strengths: [],
-      weaknesses: [],
-      actionItems: []
-    };
-  }
-  
-  isApplicable(context: EvaluationContext): boolean {
-    return context.dataType === 'domain-specific';
-  }
-}
-
-// Register and use
-registry.register(new DomainSpecificEvaluator());
-```
-
-### Multi-Strategy Evaluation
-
-```typescript
-const config: EvaluationConfig = {
-  combineStrategies: {
-    strategies: ['numeric-score', 'fact-based'],
-    aggregation: 'weighted',
-    weights: [0.6, 0.4]
+// Explore different configurations
+const result = await service.optimizeConfiguration({
+  baseAgentKey: 'base-agent',
+  variations: {
+    models: ['gpt-4o', 'claude-3-haiku'],
+    temperatures: [0.1, 0.3, 0.5, 0.7],
+    promptIds: ['concise', 'detailed', 'cot']
   },
-  feedbackDetail: 'detailed'
-};
+  sampleSize: 50
+});
 
-const evaluation = await evaluator.evaluate(configuration, config);
+console.log(`Best configuration:`);
+console.log(`  Model: ${result.bestAgent.model}`);
+console.log(`  Temperature: ${result.bestAgent.temperature}`);
+console.log(`  Score: ${result.results[0].score}`);
+```
+
+### CLI Usage
+
+```bash
+# Iterative AI-driven optimization
+pnpm cli improve <agent-key> --target 0.9 --max-iterations 10
+
+# Grid search exploration
+pnpm cli improve <agent-key> --explore \
+  --models gpt-4o,gpt-4o-mini \
+  --temperatures 0.3,0.5,0.7 \
+  --sample-size 100
+
+# With budget override
+pnpm cli improve <agent-key> --max-budget 20
+
+# Disable budget checks (dangerous!)
+pnpm cli improve <agent-key> --no-budget
 ```
 
 ## Configuration
@@ -161,248 +167,180 @@ const evaluation = await evaluator.evaluate(configuration, config);
 ### Optimization Parameters
 
 ```typescript
-interface OptimizationParams {
-  baseConfig: Config;           // Starting configuration
-  targetScore: number;          // Target score to achieve (0-1)
-  maxIterations: number;        // Maximum optimization iterations
-  minImprovement: number;       // Minimum improvement to continue
-  evaluationStrategy?: string;  // Specific strategy to use
-  enableResearch: boolean;      // Enable research agent
-  convergenceThreshold: number; // Variance threshold for convergence
+interface IterativeOptimizationParams {
+  baseAgentKey: string;      // Agent to optimize
+  targetScore?: number;       // Target score (default: 0.8)
+  maxIterations?: number;     // Max iterations (default: 5)
+  verbose?: boolean;          // Detailed logging
+}
+
+interface GridSearchParams {
+  baseAgentKey: string;
+  variations: {
+    models?: string[];        // Models to test
+    temperatures?: number[];  // Temperature values
+    promptIds?: string[];     // Prompt versions
+    maxTokens?: number[];     // Token limits
+  };
+  dataset?: {
+    limit?: number;          // Sample size for testing
+  };
 }
 ```
 
-### Flow Configuration
+### AI Agent Requirements
+
+The system requires two specialized agents to be configured in the database:
+- `prompt_researcher`: Analyzes and researches improvements
+- `prompt_engineer`: Implements prompt enhancements
+
+These agents should be created with appropriate prompts for their respective tasks.
+
+## How the AI Agents Work
+
+### Prompt Research Agent
+
+Analyzes current performance and identifies improvement opportunities:
 
 ```typescript
-interface FlowConfig {
-  evaluationConfig?: EvaluationConfig;  // Evaluation settings
-  enableParallelAgents?: boolean;       // Run agents in parallel
-  saveIntermediateResults?: boolean;    // Save checkpoints
-  verbose?: boolean;                    // Detailed logging
+interface PromptResearchOutput {
+  issues: string[];                    // Identified problems
+  rootCauses: string[];                // Underlying causes
+  recommendations: Array<{
+    technique: string;                 // Improvement technique
+    rationale: string;                 // Why it should work
+    priority: 'high' | 'medium' | 'low';
+  }>;
+  implementationStrategy: string;      // How to apply improvements
 }
 ```
 
-## Advanced Features
+### Prompt Engineer Agent
 
-### Checkpoint and Resume
-
-```typescript
-// Save state during optimization
-const state = optimizationState.toJSON();
-saveToDatabase(state);
-
-// Resume from saved state
-const savedState = loadFromDatabase();
-const result = await orchestrator.resumeFromState(savedState, config);
-```
-
-### Pattern Analysis
+Implements the improvements suggested by research:
 
 ```typescript
-// Analyze patterns across iterations
-const patterns = patternAnalyzer.getPersistentPatterns(minIterations: 3);
-
-// Get improvement suggestions from patterns
-const improvements = patternAnalyzer.suggestImprovements(patterns);
-```
-
-### Custom Research Sources
-
-```typescript
-// Add custom knowledge source
-researcher.addKnowledgeSource({
-  type: 'external',
-  name: 'custom-research',
-  query: async (topic: string) => {
-    // Fetch from custom source
-    return await fetchCustomKnowledge(topic);
-  }
-});
-```
-
-## Benefits
-
-### 1. Flexibility
-- Switch evaluation methods based on use case
-- Easy A/B testing of different strategies
-- Adapt to new requirements without refactoring
-
-### 2. Intelligence
-- Auto-select best evaluator based on context
-- Learn from evaluation history
-- Provide richer feedback by combining perspectives
-
-### 3. Scalability
-- Parallel agent execution
-- Checkpoint/resume for long-running optimizations
-- Pluggable architecture for new components
-
-### 4. Reliability
-- Convergence detection prevents infinite loops
-- Pattern recognition identifies systematic issues
-- Multi-strategy validation increases confidence
-
-## API Reference
-
-### ImprovementService
-
-```typescript
-class ImprovementService {
-  // Original methods still available
-  async optimizeConfiguration(params: OptimizationParams): Promise<OptimizationResult>
-  async analyzePromptPerformance(params: PromptImprovementParams): Promise<any>
-  async evaluateCurrentConfig(): Promise<any>
-  
-  // New iterative optimization
-  async runIterativeOptimization(params: {
-    baseConfigKey: string;
-    targetScore?: number;
-    maxIterations?: number;
-    evaluationStrategy?: string;
-    enableResearch?: boolean;
-    verbose?: boolean;
-  }): Promise<any>
+interface PromptEngineeringOutput {
+  improvedPrompt: string;              // New optimized prompt
+  appliedTechniques: string[];        // What was changed
+  changesSummary: string;             // Human-readable summary
+  expectedImprovement: number;        // Predicted score increase
 }
 ```
 
-### EvaluationRegistry
+## Performance Characteristics
 
-```typescript
-class EvaluationRegistry {
-  register(strategy: EvaluationStrategy): void
-  get(strategyName: string): EvaluationStrategy | undefined
-  selectStrategy(context: EvaluationContext): EvaluationStrategy
-  addRule(rule: EvaluationRule): void
-  setDefault(strategyName: string): void
-}
+### Time Complexity
+- **Iterative**: O(iterations × dataset_size)
+- **Grid Search**: O(configurations × dataset_size)
+
+### Cost Estimates
+- **Iterative**: ~$0.50-2.00 per optimization run
+- **Grid Search**: ~$0.01-0.05 per configuration tested
+
+### Typical Performance
+- Iterative optimization: 3-5 iterations to convergence
+- Grid search: Tests all combinations systematically
+- Evaluation: 20-100 samples per test (configurable)
+
+## Best Practices
+
+### 1. Start with Grid Search
+Use grid search to find a good baseline configuration:
+```bash
+pnpm cli improve agent --explore --sample-size 50
 ```
 
-### FlowOrchestrator
-
-```typescript
-class FlowOrchestrator {
-  async runOptimizationFlow(
-    params: OptimizationParams,
-    config?: FlowConfig
-  ): Promise<OptimizationResult>
-  
-  async resumeFromState(
-    stateData: any,
-    config?: FlowConfig
-  ): Promise<OptimizationResult>
-  
-  analyzeOptimizationHistory(result: OptimizationResult): any
-}
+### 2. Refine with Iterative Optimization
+Use the best configuration from grid search as a starting point:
+```bash
+pnpm cli improve optimized-agent --target 0.9
 ```
 
-## Examples
-
-### Example 1: Content Scoring Optimization
-
+### 3. Monitor Costs
+Always check cost estimates before running:
 ```typescript
-// Traditional numeric scoring
-await service.runIterativeOptimization({
-  baseConfigKey: 'content-scorer',
-  targetScore: 0.85,
-  evaluationStrategy: 'numeric-score'
-});
+// The system will show estimates before proceeding
+// Example: "Estimated cost: $1.23"
 ```
 
-### Example 2: RAG System Optimization
+### 4. Use Appropriate Sample Sizes
+- Development: 20-50 samples for quick iteration
+- Production: 100-200 samples for reliable results
 
-```typescript
-// Fact-based evaluation for Q&A
-await service.runIterativeOptimization({
-  baseConfigKey: 'rag-config',
-  targetScore: 0.9,
-  evaluationStrategy: 'fact-based',
-  enableResearch: true
-});
-```
-
-### Example 3: Hybrid Optimization
-
-```typescript
-// Combine numeric and fact-based evaluation
-await service.runIterativeOptimization({
-  baseConfigKey: 'hybrid-system',
-  targetScore: 0.88,
-  evaluationStrategy: 'hybrid',
-  maxIterations: 15
-});
-```
+### 5. Set Realistic Targets
+- 0.7-0.8: Good baseline performance
+- 0.8-0.9: Excellent performance
+- >0.9: May require many iterations
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Convergence Too Early**: Adjust `convergenceThreshold` to be smaller
-2. **No Improvement**: Enable research agent for external insights
-3. **Wrong Strategy Selected**: Specify strategy manually or adjust selection rules
-4. **Slow Optimization**: Enable parallel agents with `enableParallelAgents: true`
+1. **"Agent not found" errors**
+   - Ensure `prompt_researcher` and `prompt_engineer` agents exist
+   - Check agent keys are spelled correctly
 
-### Performance Tuning
+2. **Budget exceeded**
+   - Reduce sample size or iteration count
+   - Increase budget limit if needed
+   - Use `--no-budget` only for testing
 
-- Use `verbose: true` for detailed debugging
-- Monitor convergence metrics in state
-- Adjust `minImprovement` threshold
-- Limit `maxIterations` for faster results
+3. **No improvement after iterations**
+   - Check if target score is realistic
+   - Verify test dataset quality
+   - Consider different base prompts
 
-## Framework Independence
+4. **Slow optimization**
+   - Reduce sample size for faster iteration
+   - Use fewer parameter variations in grid search
+   - Consider using cheaper models for initial testing
 
-### Current State
-Evolve currently uses Mastra for agent implementation, but the architecture is designed for framework independence through:
+## Implementation Details
 
-- **Abstract interfaces** for agent operations
-- **Pluggable adapters** for different frameworks
-- **Common evaluation layer** that works across frameworks
-- **Unified state management** independent of agent implementation
-
-### Planned Framework Support
-
-```typescript
-// Mastra (Current)
-import { MastraAdapter } from '@evolve/mastra';
-const evolve = new Evolve({ adapter: new MastraAdapter(agent) });
-
-// LangChain (Coming Soon)
-import { LangChainAdapter } from '@evolve/langchain';
-const evolve = new Evolve({ adapter: new LangChainAdapter(chain) });
-
-// Vercel AI SDK (Planned)
-import { VercelAdapter } from '@evolve/vercel';
-const evolve = new Evolve({ adapter: new VercelAdapter(aiAgent) });
-
-// Custom Framework
-import { CustomAdapter } from './my-adapter';
-const evolve = new Evolve({ adapter: new CustomAdapter(myAgent) });
+### Prompt Versioning
+Every optimization creates versioned prompts:
 ```
+original_v1 → v1_optimized_1234567890 → v1_optimized_1234567891
+```
+
+### Agent Versioning
+New agents are created with optimization metadata:
+```
+scorer → scorer_opt_1234567890 → scorer_opt_1234567891
+```
+
+### Database Persistence
+All optimization results are saved:
+- Agent configurations
+- Prompt versions
+- Performance metrics
+- Optimization history
 
 ## Future Enhancements
 
-### Near Term (Q2 2024)
-- **Framework Adapters**: LangChain, Vercel AI SDK integration
-- **Cloud Deployment**: Serverless evolution functions
-- **Real-time Monitoring**: Production performance tracking
-- **Community Patterns**: Shared optimization strategies
+### Near Term
+- Parallel evaluation for faster testing
+- Caching for repeated evaluations
+- Rollback mechanism for failed optimizations
+- More sophisticated convergence detection
 
-### Long Term (Q3-Q4 2024)
-- **Distributed Evolution**: Multi-node optimization
-- **AutoML Integration**: Automatic architecture search
-- **Cross-Agent Learning**: Transfer learning between agents
-- **Enterprise Features**: SSO, audit logs, compliance
-- **Visual Evolution Studio**: GUI for monitoring evolution
+### Long Term
+- Multi-objective optimization
+- Transfer learning between agents
+- Automatic hyperparameter tuning
+- Real-time performance monitoring
 
-## Why Evolve?
+## Why This Approach?
 
-Traditional AI agents are static - they perform the same way today as they did yesterday. **Evolve** changes this by making your agents:
+The simplified architecture provides:
 
-- **Self-Improving**: Learn from every interaction
-- **Adaptive**: Adjust to changing requirements
-- **Intelligent**: Use research and patterns for optimization
-- **Framework-Agnostic**: Work with your existing tech stack
+1. **Focused Optimization**: Two specialized AI agents working together
+2. **Cost Control**: Built-in budget management prevents runaway costs
+3. **Flexibility**: Choose between systematic exploration or intelligent improvement
+4. **Transparency**: Clear versioning and history tracking
+5. **Reliability**: Convergence detection prevents infinite loops
 
 ---
 
-**Evolve** - Transform your static AI agents into continuously learning systems.
+**Evolve** - Simple, intelligent, cost-effective agent optimization.

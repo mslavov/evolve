@@ -292,24 +292,21 @@ pnpm cli agent set structured_agent \
   }'
 ```
 
-### Research-Driven Optimization
+### AI-Driven Optimization
 
 ```bash
-# Enable research agent for better improvements
-pnpm cli improve optimize myagent \
-  --enable-research \
-  --iterations 10
+# Run iterative optimization with AI agents
+pnpm cli improve myagent \
+  --target 0.9 \
+  --max-iterations 10
 ```
 
 ## System Agents
 
-Evolve includes several system agents that power the optimization process:
+Evolve uses two specialized AI agents for optimization:
 
-- **evaluator**: Evaluates agent performance
-- **researcher**: Finds improvement strategies
-- **optimizer**: Implements optimizations
-- **prompt_generator**: Creates prompt variations
-- **assessor**: Validates output quality
+- **prompt_researcher**: Analyzes performance and researches improvements
+- **prompt_engineer**: Implements prompt improvements based on research
 
 You can view these with:
 ```bash

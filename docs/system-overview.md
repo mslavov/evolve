@@ -74,13 +74,12 @@
 ## Core Components
 
 ### 1. Agent System (`/src/services/agents/`)
-Specialized AI agents that work together for optimization:
-- **Evaluation Agent**: Runs evaluations with configurable strategies
-- **Research Agent**: Finds improvement strategies from knowledge sources
-- **Optimization Agent**: Implements improvements based on research
+Specialized AI agents for prompt optimization:
+- **Prompt Research Agent**: Analyzes prompt weaknesses and researches improvement strategies
+- **Prompt Engineer Agent**: Implements prompt improvements based on research findings
 - Configurable model selection (GPT-4, Claude)
 - Temperature and token control
-- Structured output with Zod schemas
+- Structured output with JSON schemas
 
 ### 2. Repository Layer (`/src/repositories/`)
 Data access layer using Drizzle ORM:
@@ -94,24 +93,25 @@ Data access layer using Drizzle ORM:
 Business logic and orchestration:
 - **Agent Service**: Manages agent lifecycle and execution
 - **Assessment Service**: Handles run assessments and dataset building
-- **Improvement Service**: Coordinates iterative optimization
-- **Orchestration**: Flow orchestrator for multi-agent collaboration
-- **Prompt Service**: Dynamic prompt management
+- **Improvement Service**: Coordinates both grid search and iterative optimization
+- **Iterative Optimization Service**: Implements AI-driven prompt improvement loop
+- **Grid Search Service**: Parameter exploration and configuration optimization
+- **Cost Tracker Service**: Budget management and cost estimation
+- **Prompt Service**: Dynamic prompt management and versioning
 
 ### 4. Evaluation System (`/src/services/evaluation/`)
-Pluggable evaluation architecture:
-- Multiple evaluation strategies (numeric, fact-based, hybrid)
-- Pattern analysis for failure identification
-- Feedback synthesis for actionable improvements
-- Performance metrics (MAE, RMSE, correlation)
+Streamlined evaluation system:
+- **Evaluation Service**: Core agent performance testing
+- **Output Evaluator**: Compares actual vs expected outputs
+- Performance metrics (MAE, RMSE, similarity scores)
+- Support for different output types (structured, text)
 
-### 5. Flow Orchestrator (`/src/services/orchestration/flow.orchestrator.ts`)
-Manages iterative optimization:
-- Coordinates multi-agent collaboration
-- Handles state persistence and recovery
-- Implements convergence detection
-- Tests different configurations
-- **Saves optimal agents to database**
+### 5. Optimization Services
+Two main optimization approaches:
+- **Iterative Optimization**: AI-driven prompt improvement with convergence detection
+- **Grid Search**: Systematic parameter exploration (models, temperatures, prompts)
+- Both services include budget enforcement and cost tracking
+- Automatic agent versioning and database persistence
 
 ### 6. Prompt Library (`/src/prompts/prompt-library.ts`)
 Manages scoring prompts:
@@ -152,10 +152,10 @@ Command-line interface for all operations:
    - Feedback synthesis
 
 5. **Optimization Phase**
-   - Research-driven improvements
-   - Multi-agent collaboration
-   - Iterative refinement until convergence
-   - Automatic agent updates
+   - AI-driven prompt research and engineering
+   - Iterative refinement with convergence detection
+   - Grid search for parameter optimization
+   - Automatic agent versioning and updates
 
 ## Environment Configuration
 

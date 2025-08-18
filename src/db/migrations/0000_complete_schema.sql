@@ -379,9 +379,10 @@ VALUES
     'Evaluates similarity between actual and expected outputs',
     'You are an expert evaluator comparing AI agent outputs.
 
-Input will be provided as JSON: {"actual": <actual_output>, "expected": <expected_output>}
-
 Task: Evaluate how similar the actual output is to the expected output.
+
+Input:
+{{input}}
 
 Instructions:
 1. Compare the semantic meaning, not just literal text

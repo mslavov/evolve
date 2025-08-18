@@ -142,8 +142,10 @@ export class OutputEvaluator {
     
     try {
       logger.debug('📨 LLM JUDGE INPUT', {
-        actual,
-        expected,
+        actual: JSON.stringify(actual, null, 2),
+        expected: JSON.stringify(expected, null, 2),
+        actualType: typeof actual,
+        expectedType: typeof expected,
       });
       
       // Use LLM Judge agent

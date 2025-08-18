@@ -181,14 +181,29 @@ export class EvaluationService {
             ? JSON.parse(data.expectedOutput)
             : data.expectedOutput;
 
+          // Parse actual output if it's a string (to ensure consistent format)
+          const actual = typeof result.output === 'string' 
+            ? (() => {
+                try {
+                  // Try to extract JSON from markdown code blocks first
+                  const jsonMatch = result.output.match(/```json\n?([\s\S]*?)\n?```/) || 
+                                   result.output.match(/```\n?([\s\S]*?)\n?```/);
+                  const jsonStr = jsonMatch ? jsonMatch[1].trim() : result.output;
+                  return JSON.parse(jsonStr);
+                } catch {
+                  return result.output; // Keep as string if not valid JSON
+                }
+              })()
+            : result.output;
+
           logger.debug({
             expected,
-            actual: result.output,
+            actual,
             comparisonType: outputType,
           }, '🔍 COMPARING OUTPUTS');
 
           // Compare outputs
-          const comparison = await this.outputEvaluator.compare(result.output, expected, outputType);
+          const comparison = await this.outputEvaluator.compare(actual, expected, outputType);
           
           logger.debug({
             similarity: comparison.similarity.toFixed(4),
@@ -206,7 +221,7 @@ export class EvaluationService {
             sampleResults.push({
               input: data.input,
               expected,
-              actual: result.output,
+              actual,
               similarity: comparison.similarity,
               error,
             });
@@ -247,9 +262,9 @@ export class EvaluationService {
     logger.debug(`${'='.repeat(80)}`);
     logger.info({
       metrics: {
-        averageScore: avgScore.toFixed(4),
-        averageError: avgError.toFixed(4),
-        rmse: rmse.toFixed(4),
+        averageScore: avgScore,
+        averageError: avgError,
+        rmse: rmse,
         samplesEvaluated: count,
       },
       duration: `${Date.now() - startTime}ms`,

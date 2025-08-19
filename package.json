@@ -14,7 +14,7 @@
     "db:status": "tsx src/cli/index.ts migrate status",
     "db:validate": "tsx src/cli/index.ts migrate validate",
     "db:repair": "tsx src/cli/index.ts migrate repair",
-    "db:reset": "rm -f data/scoring.db && pnpm db:migrate",
+    "db:reset": "rm -f data/evolve.db && pnpm db:migrate",
     "db:fresh": "pnpm db:reset && tsx src/db/seed-bulgarian-config.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",

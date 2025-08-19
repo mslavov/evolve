@@ -181,7 +181,7 @@ migrateCommand
     try {
       // Delete database file
       const { execSync } = await import('child_process');
-      execSync('rm -f data/scoring.db');
+      execSync('rm -f data/evolve.db');
       spinner.text = 'Database deleted, applying migrations...';
       
       // Run migrations

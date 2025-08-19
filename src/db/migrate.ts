@@ -181,7 +181,7 @@ export async function runMigrations(options?: { migrationsFolder?: string }): Pr
   
   try {
     // Ensure data directory exists
-    const dbUrl = process.env.DATABASE_URL || 'file:./data/scoring.db';
+    const dbUrl = process.env.DATABASE_URL || 'file:./data/evolve.db';
     if (dbUrl.startsWith('file:')) {
       const dbPath = dbUrl.replace('file:', '');
       const dbDir = dirname(dbPath);

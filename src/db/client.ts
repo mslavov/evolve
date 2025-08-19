@@ -16,7 +16,7 @@ export interface DatabaseConfig {
  */
 export function getDatabase(config?: DatabaseConfig) {
   if (!dbInstance) {
-    const url = config?.url || process.env.DATABASE_URL || 'file:./data/scoring.db';
+    const url = config?.url || process.env.DATABASE_URL || 'file:./data/evolve.db';
     const authToken = config?.authToken || process.env.DATABASE_AUTH_TOKEN;
     
     sqliteClient = createClient({
@@ -46,7 +46,7 @@ export async function closeDatabase() {
  */
 export function getSqliteClient(config?: DatabaseConfig) {
   if (!sqliteClient) {
-    const url = config?.url || process.env.DATABASE_URL || 'file:./data/scoring.db';
+    const url = config?.url || process.env.DATABASE_URL || 'file:./data/evolve.db';
     const authToken = config?.authToken || process.env.DATABASE_AUTH_TOKEN;
     
     sqliteClient = createClient({

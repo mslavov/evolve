@@ -130,7 +130,7 @@ export class AgentService {
     let result: any;
     let parsedOutput: any;
     
-    logger.info('🚀 CALLING LLM', {
+    logger.debug('🚀 CALLING LLM', {
       model: agent.model,
       temperature: agent.temperature,
       maxTokens: agent.maxTokens,
@@ -255,7 +255,7 @@ export class AgentService {
     
     const executionTime = Date.now() - startTime;
     
-    logger.info('✅ LLM CALL COMPLETED', {
+    logger.debug('✅ LLM CALL COMPLETED', {
       executionTime: `${executionTime}ms`,
       outputType: agent.outputType,
       tokensUsed: result.usage?.totalTokens || 'N/A',

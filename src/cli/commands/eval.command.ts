@@ -31,14 +31,14 @@ export function createEvalCommand() {
           goodRmse: options.goodRmse,
         },
       });
-      
+
       const spinner = ora('Running evaluation...').start();
-      
+
       try {
         const db = getDatabase();
         const evaluationService = new EvaluationService(db);
         logger.debug('Database and evaluation service initialized');
-        
+
         // Show configuration if verbose
         if (options.verbose) {
           spinner.info(`Evaluating agent: ${chalk.cyan(agentKey)}`);
@@ -50,35 +50,35 @@ export function createEvalCommand() {
           }
           spinner.start('Running evaluation...');
         }
-        
+
         logger.debug('Calling evaluateAgent', {
           agentKey,
           datasetVersion: options.dataset,
           limit: options.limit,
         });
-        
+
         const result = await evaluationService.evaluateAgent(agentKey, {
           datasetVersion: options.dataset,
           limit: options.limit,
         });
-        
+
         logger.info('Evaluation completed successfully', {
           metrics: result.metrics,
           strengthsCount: result.strengths.length,
           weaknessesCount: result.weaknesses.length,
         });
-        
+
         spinner.succeed('Evaluation complete!');
-        
+
         console.log(chalk.cyan('\n📊 Evaluation Results:\n'));
-        
+
         // Display metrics with proper formatting
         console.log('📈 Performance Metrics:');
         console.log(`  Average Score: ${chalk.yellow(result.metrics.averageScore.toFixed(3))}`);
         console.log(`  Average Error: ${chalk.yellow(result.metrics.averageError.toFixed(3))}`);
         console.log(`  RMSE: ${chalk.yellow(result.metrics.rmse.toFixed(4))}`);
         console.log(`  Samples Evaluated: ${chalk.white(result.metrics.samplesEvaluated)}`);
-        
+
         // Display strengths
         if (result.strengths.length > 0) {
           console.log(chalk.green('\n✅ Strengths:'));
@@ -86,7 +86,7 @@ export function createEvalCommand() {
             console.log(`  • ${strength}`);
           }
         }
-        
+
         // Display weaknesses
         if (result.weaknesses.length > 0) {
           console.log(chalk.red('\n⚠️  Weaknesses:'));
@@ -94,7 +94,7 @@ export function createEvalCommand() {
             console.log(`  • ${weakness}`);
           }
         }
-        
+
         // Verbose output
         if (options.verbose) {
           console.log(chalk.gray('\n📋 Evaluation Details:'));
@@ -103,17 +103,17 @@ export function createEvalCommand() {
           console.log(`  Sample Limit: ${options.limit || 'default (50)'}`);
           console.log(`  Evaluation Method: Standard performance analysis`);
         }
-        
+
         // Determine exit code based on performance with configurable thresholds
         const avgScore = result.metrics.averageScore;
         const rmse = result.metrics.rmse;
-        
+
         // Use provided thresholds or defaults
         const poorScoreThreshold = options.poorScore ?? 0.5;
         const poorRmseThreshold = options.poorRmse ?? 0.3;
         const goodScoreThreshold = options.goodScore ?? 0.7;
         const goodRmseThreshold = options.goodRmse ?? 0.2;
-        
+
         // Exit with non-zero code if performance is poor (for CI/CD)
         if (avgScore < poorScoreThreshold || rmse > poorRmseThreshold) {
           logger.warn('Performance below recommended thresholds', {
@@ -144,17 +144,17 @@ export function createEvalCommand() {
           console.log(chalk.green('\n🎯 Excellent performance!'));
           process.exit(0);
         }
-        
+
       } catch (error) {
         logger.error('Evaluation failed', {
           error: error instanceof Error ? error.message : String(error),
           stack: error instanceof Error ? error.stack : undefined,
           agentKey,
         });
-        
+
         spinner.fail('Evaluation failed');
         console.error(chalk.red('Error:'), error);
-        
+
         // Provide helpful error messages
         if (error instanceof Error) {
           if (error.message.includes('not found')) {
@@ -163,7 +163,7 @@ export function createEvalCommand() {
             console.log(chalk.gray('\n💡 Tip: Generate test data with: pnpm cli dataset build'));
           }
         }
-        
+
         process.exit(1);
       }
     });

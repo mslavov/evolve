@@ -101,7 +101,7 @@ export class EvaluationService {
       agentKey?: string; // Use existing agent if provided
     }
   ): Promise<TestResult> {
-    logger.info('Starting agent configuration test', {
+    logger.debug('Starting agent configuration test', {
       config: {
         model: config.model,
         temperature: config.temperature,
@@ -157,6 +157,12 @@ export class EvaluationService {
       // Test each sample
       for (let i = 0; i < dataset.length; i++) {
         const data = dataset[i];
+        
+        // Progress logging at milestones
+        if (i === 0 || (i + 1) % Math.ceil(dataset.length / 4) === 0 || i === dataset.length - 1) {
+          logger.info(`Progress: ${i + 1}/${dataset.length} samples evaluated (${Math.round((i + 1) / dataset.length * 100)}%)`);
+        }
+        
         logger.debug(`\n${'='.repeat(80)}`);
         logger.debug(`TESTING SAMPLE ${i + 1}/${dataset.length}`);
         logger.debug(`${'='.repeat(80)}`);
@@ -270,17 +276,20 @@ export class EvaluationService {
     const rmse = count > 0 ? Math.sqrt(totalSquaredError / count) : 0;
 
     logger.debug(`${'='.repeat(80)}`);
-    logger.info({
+    logger.debug({
       metrics: {
-        averageScore: avgScore,
-        averageError: avgError,
-        rmse: rmse,
+        averageScore: avgScore.toFixed(4),
+        averageError: avgError.toFixed(4),
+        rmse: rmse.toFixed(4),
         samplesEvaluated: count,
       },
       duration: `${Date.now() - startTime}ms`,
       performance: avgScore >= 0.7 ? '✅ GOOD' : avgScore >= 0.5 ? '⚠️ MODERATE' : '❌ POOR',
     }, '📈 TEST CONFIGURATION COMPLETED');
     logger.debug(`${'='.repeat(80)}`);
+    
+    // Log final summary at info level
+    logger.info(`Evaluation complete: Score=${avgScore.toFixed(3)}, RMSE=${rmse.toFixed(4)}, Samples=${count}, Time=${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 
     return {
       config,
@@ -307,7 +316,7 @@ export class EvaluationService {
       includeDetails?: boolean;
     }
   ): Promise<EvaluationResult> {
-    logger.info('Starting agent evaluation', {
+    logger.debug('Starting agent evaluation', {
       agentKey,
       options,
     });
@@ -335,11 +344,13 @@ export class EvaluationService {
       limit: options?.limit ?? 50,
     });
 
-    logger.info('Dataset loaded', { 
+    logger.debug('Dataset loaded', { 
       datasetSize: testData.length,
       version: options?.datasetVersion || 'default',
       split: options?.split || 'test',
     });
+    
+    logger.info(`Evaluating agent '${agentKey}' with ${testData.length} samples`);
 
     if (testData.length === 0) {
       logger.error('No test data available', {
